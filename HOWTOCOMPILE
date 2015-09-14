@@ -8,16 +8,20 @@ DEPS
 STANDARD
 
 AMD64
-	cp parrot-amd64 .config
-	make -j9 deb-pkg LOCALVERSION=-amd64 KDEB_PKGVERSION=4.1.6-custom
+	cp config-amd64 .config
+	make -j9 deb-pkg LOCALVERSION=-amd64 KDEB_PKGVERSION=4.1.7-custom
 
 686-PAE
-	cp parrot-686-pae .config
-	make -j9 deb-pkg LOCALVERSION=-686-pae KDEB_PKGVERSION=4.1.6-custom
+	cp config-686-pae .config
+	make -j9 deb-pkg LOCALVERSION=-686-pae KDEB_PKGVERSION=4.1.7-custom
+
+586
+	cp config-586 .config
+	make -j9 deb-pkg LOCALVERSION=-586 KDEB_PKGVERSION=4.1.7-custom
 
 486
-	cp parrot-486 .config
-	make -j9 deb-pkg LOCALVERSION=-486 KDEB_PKGVERSION=4.1.6-custom
+	cp config-486 .config
+	make -j9 deb-pkg LOCALVERSION=-486 KDEB_PKGVERSION=4.1.7custom
 
 
 
