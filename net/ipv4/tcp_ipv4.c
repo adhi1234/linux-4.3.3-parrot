@@ -605,6 +605,20 @@ static void tcp_v4_send_reset(struct sock *sk, struct sk_buff *skb)
 	if (!sk && skb_rtable(skb)->rt_type != RTN_LOCAL)
 		return;
 
+		/*
+	
+	The following "return;" stops the kernel from sending any RST packet,
+	resulting in a pro-active defense against (for examble) FIN, Null
+	and X-Mas port scan attacks. 
+	
+	This little hack is well documented on "Hacking, the art of exploitation"
+	by John Erickson, and was applied here by
+	Lorenzo "EclipseSpark" Faletra <eclipse@frozenbox.org> for the custom
+	hardened kernel of Parrot Security OS and other derived projects
+	
+	*/
+	return;
+
 	/* Swap the send and the receive. */
 	memset(&rep, 0, sizeof(rep));
 	rep.th.dest   = th->source;
