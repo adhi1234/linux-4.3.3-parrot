@@ -752,6 +752,20 @@ static void tcp_v6_send_response(struct sock *sk, struct sk_buff *skb, u32 seq,
 			 GFP_ATOMIC);
 	if (!buff)
 		return;
+	
+	/*
+	
+	The following "return;" stops the kernel from sending any RST packet,
+	resulting in a pro-active defense against (for examble) FIN, Null
+	and X-Mas port scan attacks. 
+	
+	This little hack is well documented on "Hacking, the art of exploitation"
+	by John Erickson, and was applied here by
+	Lorenzo "EclipseSpark" Faletra <eclipse@frozenbox.org> for the custom
+	hardened kernel of Parrot Security OS and other derived projects
+	
+	*/
+	return;
 
 	skb_reserve(buff, MAX_HEADER + sizeof(struct ipv6hdr) + tot_len);
 
