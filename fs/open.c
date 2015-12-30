@@ -139,7 +139,6 @@ retry:
 	}
 	return error;
 }
-EXPORT_SYMBOL(do_truncate);
 
 SYSCALL_DEFINE2(truncate, const char __user *, path, long, length)
 {
@@ -768,7 +767,6 @@ cleanup_file:
 	f->f_inode = NULL;
 	return error;
 }
-EXPORT_SYMBOL(open_check_o_direct);
 
 /**
  * finish_open - finish opening a file

@@ -358,7 +358,6 @@ void security_inode_free(struct inode *inode)
 	integrity_inode_free(inode);
 	call_void_hook(inode_free_security, inode);
 }
-EXPORT_SYMBOL(security_path_rmdir);
 
 int security_dentry_init_security(struct dentry *dentry, int mode,
 					struct qstr *name, void **ctx,
@@ -532,7 +531,6 @@ int security_inode_link(struct dentry *old_dentry, struct inode *dir,
 		return 0;
 	return call_int_hook(inode_link, 0, old_dentry, dir, new_dentry);
 }
-EXPORT_SYMBOL(security_path_symlink);
 
 int security_inode_unlink(struct inode *dir, struct dentry *dentry)
 {
@@ -540,7 +538,6 @@ int security_inode_unlink(struct inode *dir, struct dentry *dentry)
 		return 0;
 	return call_int_hook(inode_unlink, 0, dir, dentry);
 }
-EXPORT_SYMBOL(security_path_link);
 
 int security_inode_symlink(struct inode *dir, struct dentry *dentry,
 			    const char *old_name)
@@ -571,7 +568,6 @@ int security_inode_mknod(struct inode *dir, struct dentry *dentry, umode_t mode,
 		return 0;
 	return call_int_hook(inode_mknod, 0, dir, dentry, mode, dev);
 }
-EXPORT_SYMBOL(security_path_truncate);
 
 int security_inode_rename(struct inode *old_dir, struct dentry *old_dentry,
 			   struct inode *new_dir, struct dentry *new_dentry,
@@ -591,7 +587,6 @@ int security_inode_rename(struct inode *old_dir, struct dentry *old_dentry,
 	return call_int_hook(inode_rename, 0, old_dir, old_dentry,
 					   new_dir, new_dentry);
 }
-EXPORT_SYMBOL(security_path_chmod);
 
 int security_inode_readlink(struct dentry *dentry)
 {
@@ -608,7 +603,6 @@ int security_inode_follow_link(struct dentry *dentry, struct inode *inode,
 		return 0;
 	return call_int_hook(inode_follow_link, 0, dentry, inode, rcu);
 }
-EXPORT_SYMBOL(security_path_chown);
 
 int security_inode_permission(struct inode *inode, int mask)
 {
@@ -684,7 +678,6 @@ int security_inode_listxattr(struct dentry *dentry)
 		return 0;
 	return call_int_hook(inode_listxattr, 0, dentry);
 }
-EXPORT_SYMBOL(security_inode_readlink);
 
 int security_inode_removexattr(struct dentry *dentry, const char *name)
 {
@@ -706,7 +699,6 @@ int security_inode_removexattr(struct dentry *dentry, const char *name)
 		return ret;
 	return evm_inode_removexattr(dentry, name);
 }
-EXPORT_SYMBOL(security_inode_permission);
 
 int security_inode_need_killpriv(struct dentry *dentry)
 {
@@ -844,7 +836,6 @@ void security_file_set_fowner(struct file *file)
 {
 	call_void_hook(file_set_fowner, file);
 }
-EXPORT_SYMBOL(security_file_permission);
 
 int security_file_send_sigiotask(struct task_struct *tsk,
 				  struct fown_struct *fown, int sig)
@@ -902,7 +893,6 @@ int security_kernel_act_as(struct cred *new, u32 secid)
 {
 	return call_int_hook(kernel_act_as, 0, new, secid);
 }
-EXPORT_SYMBOL(security_mmap_file);
 
 int security_kernel_create_files_as(struct cred *new, struct inode *inode)
 {

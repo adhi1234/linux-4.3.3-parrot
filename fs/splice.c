@@ -1096,7 +1096,6 @@ ssize_t generic_splice_sendpage(struct pipe_inode_info *pipe, struct file *out,
 {
 	return splice_from_pipe(pipe, out, ppos, len, flags, pipe_to_sendpage);
 }
-EXPORT_SYMBOL(do_splice_from);
 
 EXPORT_SYMBOL(generic_splice_sendpage);
 
@@ -1285,7 +1284,6 @@ static int direct_splice_actor(struct pipe_inode_info *pipe,
 	return do_splice_from(pipe, file, sd->opos, sd->total_len,
 			      sd->flags);
 }
-EXPORT_SYMBOL(do_splice_to);
 
 /**
  * do_splice_direct - splices data directly between two files

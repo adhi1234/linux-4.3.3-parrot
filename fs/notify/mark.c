@@ -100,7 +100,6 @@ void fsnotify_get_mark(struct fsnotify_mark *mark)
 {
 	atomic_inc(&mark->refcnt);
 }
-EXPORT_SYMBOL(fsnotify_put_mark);
 
 void fsnotify_put_mark(struct fsnotify_mark *mark)
 {
@@ -196,7 +195,6 @@ void fsnotify_destroy_mark_locked(struct fsnotify_mark *mark,
 
 	mutex_lock_nested(&group->mark_mutex, SINGLE_DEPTH_NESTING);
 }
-EXPORT_SYMBOL(fsnotify_destroy_mark);
 
 void fsnotify_destroy_mark(struct fsnotify_mark *mark,
 			   struct fsnotify_group *group)
@@ -391,7 +389,6 @@ int fsnotify_add_mark(struct fsnotify_mark *mark, struct fsnotify_group *group,
 	mutex_unlock(&group->mark_mutex);
 	return ret;
 }
-EXPORT_SYMBOL(fsnotify_add_mark);
 
 /*
  * Given a list of marks, find the mark associated with given group. If found
@@ -506,7 +503,6 @@ static int fsnotify_mark_destroy(void *ignored)
 
 	return 0;
 }
-EXPORT_SYMBOL(fsnotify_init_mark);
 
 static int __init fsnotify_mark_init(void)
 {

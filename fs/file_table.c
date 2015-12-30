@@ -227,7 +227,6 @@ static void __fput(struct file *file)
 	dput(dentry);
 	mntput(mnt);
 }
-EXPORT_SYMBOL(get_empty_filp);
 
 static LLIST_HEAD(delayed_fput_list);
 static void delayed_fput(struct work_struct *unused)
@@ -318,7 +317,6 @@ void __init files_init(void)
 			SLAB_HWCACHE_ALIGN | SLAB_PANIC, NULL);
 	percpu_counter_init(&nr_files, 0, GFP_KERNEL);
 }
-EXPORT_SYMBOL(put_filp);
 
 /*
  * One file with associated inode and dcache is very roughly 1K. Per default

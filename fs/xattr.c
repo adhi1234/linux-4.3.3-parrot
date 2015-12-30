@@ -227,7 +227,6 @@ int vfs_xattr_cmp(struct dentry *dentry, const char *xattr_name,
 	kfree(xattr_value);
 	return rc;
 }
-EXPORT_SYMBOL(vfs_getxattr_alloc);
 
 ssize_t
 vfs_getxattr(struct dentry *dentry, const char *name, void *value, size_t size)

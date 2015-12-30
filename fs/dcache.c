@@ -1289,7 +1289,6 @@ static enum d_walk_ret check_mount(void *data, struct dentry *dentry)
 	}
 	return D_WALK_CONTINUE;
 }
-EXPORT_SYMBOL(d_walk);
 
 /**
  * have_submounts - check for mounts over a dentry
