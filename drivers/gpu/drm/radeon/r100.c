@@ -1039,10 +1039,7 @@ static int r100_cp_init_microcode(struct radeon_device *rdev)
 	}
 
 	err = request_firmware(&rdev->me_fw, fw_name, rdev->dev);
-	if (err) {
-		printk(KERN_ERR "radeon_cp: Failed to load firmware \"%s\"\n",
-		       fw_name);
-	} else if (rdev->me_fw->size % 8) {
+	if (err == 0 && rdev->me_fw->size % 8) {
 		printk(KERN_ERR
 		       "radeon_cp: Bogus length %zu in firmware \"%s\"\n",
 		       rdev->me_fw->size, fw_name);
@@ -4088,6 +4085,28 @@ int r100_init(struct radeon_device *rdev)
 		rdev->accel_working = false;
 	}
 	return 0;
+}
+
+uint32_t r100_mm_rreg_slow(struct radeon_device *rdev, uint32_t reg)
+{
+	unsigned long flags;
+	uint32_t ret;
+
+	spin_lock_irqsave(&rdev->mmio_idx_lock, flags);
+	writel(reg, ((void __iomem *)rdev->rmmio) + RADEON_MM_INDEX);
+	ret = readl(((void __iomem *)rdev->rmmio) + RADEON_MM_DATA);
+	spin_unlock_irqrestore(&rdev->mmio_idx_lock, flags);
+	return ret;
+}
+
+void r100_mm_wreg_slow(struct radeon_device *rdev, uint32_t reg, uint32_t v)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&rdev->mmio_idx_lock, flags);
+	writel(reg, ((void __iomem *)rdev->rmmio) + RADEON_MM_INDEX);
+	writel(v, ((void __iomem *)rdev->rmmio) + RADEON_MM_DATA);
+	spin_unlock_irqrestore(&rdev->mmio_idx_lock, flags);
 }
 
 u32 r100_io_rreg(struct radeon_device *rdev, u32 reg)

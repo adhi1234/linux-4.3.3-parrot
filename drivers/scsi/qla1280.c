@@ -1552,8 +1552,6 @@ qla1280_request_firmware(struct scsi_qla_host *ha)
 	err = request_firmware(&fw, fwname, &ha->pdev->dev);
 
 	if (err) {
-		printk(KERN_ERR "Failed to load image \"%s\" err %d\n",
-		       fwname, err);
 		fw = ERR_PTR(err);
 		goto unlock;
 	}
@@ -4217,7 +4215,6 @@ static struct scsi_host_template qla1280_driver_template = {
 	.can_queue		= 0xfffff,
 	.this_id		= -1,
 	.sg_tablesize		= SG_ALL,
-	.cmd_per_lun		= 1,
 	.use_clustering		= ENABLE_CLUSTERING,
 };
 

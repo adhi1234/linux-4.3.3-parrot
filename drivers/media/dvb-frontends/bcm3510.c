@@ -289,7 +289,7 @@ static int bcm3510_refresh_state(struct bcm3510_state *st)
 	return 0;
 }
 
-static int bcm3510_read_status(struct dvb_frontend *fe, fe_status_t *status)
+static int bcm3510_read_status(struct dvb_frontend *fe, enum fe_status *status)
 {
 	struct bcm3510_state* st = fe->demodulator_priv;
 	bcm3510_refresh_state(st);
@@ -635,10 +635,9 @@ static int bcm3510_download_firmware(struct dvb_frontend* fe)
 	int ret,i;
 
 	deb_info("requesting firmware\n");
-	if ((ret = st->config->request_firmware(fe, &fw, BCM3510_DEFAULT_FIRMWARE)) < 0) {
-		err("could not load firmware (%s): %d",BCM3510_DEFAULT_FIRMWARE,ret);
+	ret = st->config->request_firmware(fe, &fw, BCM3510_DEFAULT_FIRMWARE);
+	if (ret)
 		return ret;
-	}
 	deb_info("got firmware: %zu\n", fw->size);
 
 	b = fw->data;
@@ -685,7 +684,7 @@ static int bcm3510_reset(struct bcm3510_state *st)
 	if ((ret = bcm3510_writeB(st,0xa0,v)) < 0)
 		return ret;
 
-    t = jiffies + 3*HZ;
+	t = jiffies + 3*HZ;
 	while (time_before(jiffies, t)) {
 		msleep(10);
 		if ((ret = bcm3510_readB(st,0xa2,&v)) < 0)
@@ -708,7 +707,7 @@ static int bcm3510_clear_reset(struct bcm3510_state *st)
 	if ((ret = bcm3510_writeB(st,0xa0,v)) < 0)
 		return ret;
 
-    t = jiffies + 3*HZ;
+	t = jiffies + 3*HZ;
 	while (time_before(jiffies, t)) {
 		msleep(10);
 		if ((ret = bcm3510_readB(st,0xa2,&v)) < 0)

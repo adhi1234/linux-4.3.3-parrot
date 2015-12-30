@@ -1622,13 +1622,8 @@ static struct fwentry *at76_load_firmware(struct usb_device *udev,
 
 	at76_dbg(DBG_FW, "downloading firmware %s", fwe->fwname);
 	ret = request_firmware(&fwe->fw, fwe->fwname, &udev->dev);
-	if (ret < 0) {
-		dev_err(&udev->dev, "firmware %s not found!\n",
-			fwe->fwname);
-		dev_err(&udev->dev,
-			"you may need to download the firmware from http://developer.berlios.de/projects/at76c503a/\n");
+	if (ret)
 		goto exit;
-	}
 
 	at76_dbg(DBG_FW, "got it.");
 	fwh = (struct at76_fw_header *)(fwe->fw->data);
@@ -2360,8 +2355,8 @@ static int at76_init_new_device(struct at76_priv *priv,
 	priv->hw->wiphy->max_scan_ie_len = 0;
 	priv->hw->wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);
 	priv->hw->wiphy->bands[IEEE80211_BAND_2GHZ] = &at76_supported_band;
-	priv->hw->flags = IEEE80211_HW_RX_INCLUDES_FCS |
-			  IEEE80211_HW_SIGNAL_UNSPEC;
+	ieee80211_hw_set(priv->hw, RX_INCLUDES_FCS);
+	ieee80211_hw_set(priv->hw, SIGNAL_UNSPEC);
 	priv->hw->max_signal = 100;
 
 	SET_IEEE80211_DEV(priv->hw, &interface->dev);

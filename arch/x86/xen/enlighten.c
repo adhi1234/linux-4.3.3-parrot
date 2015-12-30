@@ -33,6 +33,10 @@
 #include <linux/memblock.h>
 #include <linux/edd.h>
 
+#ifdef CONFIG_KEXEC
+#include <linux/kexec.h>
+#endif
+
 #include <xen/xen.h>
 #include <xen/events.h>
 #include <xen/interface/xen.h>
@@ -1221,10 +1225,11 @@ static const struct pv_cpu_ops xen_cpu_ops __initconst = {
 	.read_tscp = native_read_tscp,
 
 	.iret = xen_iret,
-	.irq_enable_sysexit = xen_sysexit,
 #ifdef CONFIG_X86_64
 	.usergs_sysret32 = xen_sysret32,
 	.usergs_sysret64 = xen_sysret64,
+#else
+	.irq_enable_sysexit = xen_sysexit,
 #endif
 
 	.load_tr_desc = paravirt_nop,
@@ -1463,7 +1468,7 @@ static void xen_pvh_set_cr_flags(int cpu)
 		return;
 	/*
 	 * For BSP, PSE PGE are set in probe_page_size_mask(), for APs
-	 * set them here. For all, OSFXSR OSXMMEXCPT are set in fpu_init.
+	 * set them here. For all, OSFXSR OSXMMEXCPT are set in fpu__init_cpu().
 	*/
 	if (cpu_has_pse)
 		cr4_set_bits_and_update_boot(X86_CR4_PSE);
@@ -1507,6 +1512,7 @@ asmlinkage __visible void __init xen_start_kernel(void)
 {
 	struct physdev_set_iopl set_iopl;
 	unsigned long initrd_start = 0;
+	u64 pat;
 	int rc;
 
 	if (!xen_start_info)
@@ -1614,8 +1620,8 @@ asmlinkage __visible void __init xen_start_kernel(void)
 	 * Modify the cache mode translation tables to match Xen's PAT
 	 * configuration.
 	 */
-
-	pat_init_cache_modes();
+	rdmsrl(MSR_IA32_CR_PAT, pat);
+	pat_init_cache_modes(pat);
 
 	/* keep using Xen gdt for now; no urgent need to change it */
 
@@ -1798,6 +1804,21 @@ static struct notifier_block xen_hvm_cpu_notifier = {
 	.notifier_call	= xen_hvm_cpu_notify,
 };
 
+#ifdef CONFIG_KEXEC
+static void xen_hvm_shutdown(void)
+{
+	native_machine_shutdown();
+	if (kexec_in_progress)
+		xen_reboot(SHUTDOWN_soft_reset);
+}
+
+static void xen_hvm_crash_shutdown(struct pt_regs *regs)
+{
+	native_machine_crash_shutdown(regs);
+	xen_reboot(SHUTDOWN_soft_reset);
+}
+#endif
+
 static void __init xen_hvm_guest_init(void)
 {
 	if (xen_pv_domain())
@@ -1817,6 +1838,10 @@ static void __init xen_hvm_guest_init(void)
 	x86_init.irqs.intr_init = xen_init_IRQ;
 	xen_hvm_init_time_ops();
 	xen_hvm_init_mmu_ops();
+#ifdef CONFIG_KEXEC
+	machine_ops.shutdown = xen_hvm_shutdown;
+	machine_ops.crash_shutdown = xen_hvm_crash_shutdown;
+#endif
 }
 #endif
 

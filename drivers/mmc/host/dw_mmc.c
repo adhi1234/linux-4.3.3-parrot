@@ -99,6 +99,9 @@ struct idmac_desc {
 
 	__le32		des3;	/* buffer 2 physical address */
 };
+
+/* Each descriptor can transfer up to 4KB of data in chained mode */
+#define DW_MCI_DESC_DATA_LENGTH	0x1000
 #endif /* CONFIG_MMC_DW_IDMAC */
 
 static bool dw_mci_reset(struct dw_mci *host);
@@ -462,66 +465,96 @@ static void dw_mci_idmac_complete_dma(struct dw_mci *host)
 static void dw_mci_translate_sglist(struct dw_mci *host, struct mmc_data *data,
 				    unsigned int sg_len)
 {
+	unsigned int desc_len;
 	int i;
 	if (host->dma_64bit_address == 1) {
-		struct idmac_desc_64addr *desc = host->sg_cpu;
+		struct idmac_desc_64addr *desc_first, *desc_last, *desc;
 
-		for (i = 0; i < sg_len; i++, desc++) {
+		desc_first = desc_last = desc = host->sg_cpu;
+
+		for (i = 0; i < sg_len; i++) {
 			unsigned int length = sg_dma_len(&data->sg[i]);
 			u64 mem_addr = sg_dma_address(&data->sg[i]);
 
-			/*
-			 * Set the OWN bit and disable interrupts for this
-			 * descriptor
-			 */
-			desc->des0 = IDMAC_DES0_OWN | IDMAC_DES0_DIC |
-						IDMAC_DES0_CH;
-			/* Buffer length */
-			IDMAC_64ADDR_SET_BUFFER1_SIZE(desc, length);
+			for ( ; length ; desc++) {
+				desc_len = (length <= DW_MCI_DESC_DATA_LENGTH) ?
+					   length : DW_MCI_DESC_DATA_LENGTH;
 
-			/* Physical address to DMA to/from */
-			desc->des4 = mem_addr & 0xffffffff;
-			desc->des5 = mem_addr >> 32;
+				length -= desc_len;
+
+				/*
+				 * Set the OWN bit and disable interrupts
+				 * for this descriptor
+				 */
+				desc->des0 = IDMAC_DES0_OWN | IDMAC_DES0_DIC |
+							IDMAC_DES0_CH;
+
+				/* Buffer length */
+				IDMAC_64ADDR_SET_BUFFER1_SIZE(desc, desc_len);
+
+				/* Physical address to DMA to/from */
+				desc->des4 = mem_addr & 0xffffffff;
+				desc->des5 = mem_addr >> 32;
+
+				/* Update physical address for the next desc */
+				mem_addr += desc_len;
+
+				/* Save pointer to the last descriptor */
+				desc_last = desc;
+			}
 		}
 
 		/* Set first descriptor */
-		desc = host->sg_cpu;
-		desc->des0 |= IDMAC_DES0_FD;
+		desc_first->des0 |= IDMAC_DES0_FD;
 
 		/* Set last descriptor */
-		desc = host->sg_cpu + (i - 1) *
-				sizeof(struct idmac_desc_64addr);
-		desc->des0 &= ~(IDMAC_DES0_CH | IDMAC_DES0_DIC);
-		desc->des0 |= IDMAC_DES0_LD;
+		desc_last->des0 &= ~(IDMAC_DES0_CH | IDMAC_DES0_DIC);
+		desc_last->des0 |= IDMAC_DES0_LD;
 
 	} else {
-		struct idmac_desc *desc = host->sg_cpu;
+		struct idmac_desc *desc_first, *desc_last, *desc;
 
-		for (i = 0; i < sg_len; i++, desc++) {
+		desc_first = desc_last = desc = host->sg_cpu;
+
+		for (i = 0; i < sg_len; i++) {
 			unsigned int length = sg_dma_len(&data->sg[i]);
 			u32 mem_addr = sg_dma_address(&data->sg[i]);
 
-			/*
-			 * Set the OWN bit and disable interrupts for this
-			 * descriptor
-			 */
-			desc->des0 = cpu_to_le32(IDMAC_DES0_OWN |
-					IDMAC_DES0_DIC | IDMAC_DES0_CH);
-			/* Buffer length */
-			IDMAC_SET_BUFFER1_SIZE(desc, length);
+			for ( ; length ; desc++) {
+				desc_len = (length <= DW_MCI_DESC_DATA_LENGTH) ?
+					   length : DW_MCI_DESC_DATA_LENGTH;
 
-			/* Physical address to DMA to/from */
-			desc->des2 = cpu_to_le32(mem_addr);
+				length -= desc_len;
+
+				/*
+				 * Set the OWN bit and disable interrupts
+				 * for this descriptor
+				 */
+				desc->des0 = cpu_to_le32(IDMAC_DES0_OWN |
+							 IDMAC_DES0_DIC |
+							 IDMAC_DES0_CH);
+
+				/* Buffer length */
+				IDMAC_SET_BUFFER1_SIZE(desc, desc_len);
+
+				/* Physical address to DMA to/from */
+				desc->des2 = cpu_to_le32(mem_addr);
+
+				/* Update physical address for the next desc */
+				mem_addr += desc_len;
+
+				/* Save pointer to the last descriptor */
+				desc_last = desc;
+			}
 		}
 
 		/* Set first descriptor */
-		desc = host->sg_cpu;
-		desc->des0 |= cpu_to_le32(IDMAC_DES0_FD);
+		desc_first->des0 |= cpu_to_le32(IDMAC_DES0_FD);
 
 		/* Set last descriptor */
-		desc = host->sg_cpu + (i - 1) * sizeof(struct idmac_desc);
-		desc->des0 &= cpu_to_le32(~(IDMAC_DES0_CH | IDMAC_DES0_DIC));
-		desc->des0 |= cpu_to_le32(IDMAC_DES0_LD);
+		desc_last->des0 &= cpu_to_le32(~(IDMAC_DES0_CH |
+					       IDMAC_DES0_DIC));
+		desc_last->des0 |= cpu_to_le32(IDMAC_DES0_LD);
 	}
 
 	wmb();
@@ -1236,10 +1269,14 @@ static int dw_mci_switch_voltage(struct mmc_host *mmc, struct mmc_ios *ios)
 {
 	struct dw_mci_slot *slot = mmc_priv(mmc);
 	struct dw_mci *host = slot->host;
+	const struct dw_mci_drv_data *drv_data = host->drv_data;
 	u32 uhs;
 	u32 v18 = SDMMC_UHS_18V << slot->id;
 	int min_uv, max_uv;
 	int ret;
+
+	if (drv_data && drv_data->switch_voltage)
+		return drv_data->switch_voltage(mmc, ios);
 
 	/*
 	 * Program the voltage.  Note that some instances of dw_mmc may use
@@ -1278,10 +1315,7 @@ static int dw_mci_get_ro(struct mmc_host *mmc)
 	int gpio_ro = mmc_gpio_get_ro(mmc);
 
 	/* Use platform get_ro function, else try on board write protect */
-	if ((slot->quirks & DW_MCI_SLOT_QUIRK_NO_WRITE_PROTECT) ||
-			(slot->host->quirks & DW_MCI_QUIRK_NO_WRITE_PROTECT))
-		read_only = 0;
-	else if (!IS_ERR_VALUE(gpio_ro))
+	if (!IS_ERR_VALUE(gpio_ro))
 		read_only = gpio_ro;
 	else
 		read_only =
@@ -2280,9 +2314,10 @@ static irqreturn_t dw_mci_interrupt(int irq, void *dev_id)
 }
 
 #ifdef CONFIG_OF
-/* given a slot id, find out the device node representing that slot */
-static struct device_node *dw_mci_of_find_slot_node(struct device *dev, u8 slot)
+/* given a slot, find out the device node representing that slot */
+static struct device_node *dw_mci_of_find_slot_node(struct dw_mci_slot *slot)
 {
+	struct device *dev = slot->mmc->parent;
 	struct device_node *np;
 	const __be32 *addr;
 	int len;
@@ -2294,42 +2329,28 @@ static struct device_node *dw_mci_of_find_slot_node(struct device *dev, u8 slot)
 		addr = of_get_property(np, "reg", &len);
 		if (!addr || (len < sizeof(int)))
 			continue;
-		if (be32_to_cpup(addr) == slot)
+		if (be32_to_cpup(addr) == slot->id)
 			return np;
 	}
 	return NULL;
 }
 
-static struct dw_mci_of_slot_quirks {
-	char *quirk;
-	int id;
-} of_slot_quirks[] = {
-	{
-		.quirk	= "disable-wp",
-		.id	= DW_MCI_SLOT_QUIRK_NO_WRITE_PROTECT,
-	},
-};
-
-static int dw_mci_of_get_slot_quirks(struct device *dev, u8 slot)
+static void dw_mci_slot_of_parse(struct dw_mci_slot *slot)
 {
-	struct device_node *np = dw_mci_of_find_slot_node(dev, slot);
-	int quirks = 0;
-	int idx;
+	struct device_node *np = dw_mci_of_find_slot_node(slot);
 
-	/* get quirks */
-	for (idx = 0; idx < ARRAY_SIZE(of_slot_quirks); idx++)
-		if (of_get_property(np, of_slot_quirks[idx].quirk, NULL)) {
-			dev_warn(dev, "Slot quirk %s is deprecated\n",
-					of_slot_quirks[idx].quirk);
-			quirks |= of_slot_quirks[idx].id;
-		}
+	if (!np)
+		return;
 
-	return quirks;
+	if (of_property_read_bool(np, "disable-wp")) {
+		slot->mmc->caps2 |= MMC_CAP2_NO_WRITE_PROTECT;
+		dev_warn(slot->mmc->parent,
+			"Slot quirk 'disable-wp' is deprecated\n");
+	}
 }
 #else /* CONFIG_OF */
-static int dw_mci_of_get_slot_quirks(struct device *dev, u8 slot)
+static void dw_mci_slot_of_parse(struct dw_mci_slot *slot)
 {
-	return 0;
 }
 #endif /* CONFIG_OF */
 
@@ -2351,8 +2372,6 @@ static int dw_mci_init_slot(struct dw_mci *host, unsigned int id)
 	slot->mmc = mmc;
 	slot->host = host;
 	host->slot[id] = slot;
-
-	slot->quirks = dw_mci_of_get_slot_quirks(host->dev, slot->id);
 
 	mmc->ops = &dw_mci_ops;
 	if (of_property_read_u32_array(host->dev->of_node,
@@ -2391,6 +2410,8 @@ static int dw_mci_init_slot(struct dw_mci *host, unsigned int id)
 	if (host->pdata->caps2)
 		mmc->caps2 = host->pdata->caps2;
 
+	dw_mci_slot_of_parse(slot);
+
 	ret = mmc_of_parse(mmc);
 	if (ret)
 		goto err_host_allocated;
@@ -2406,7 +2427,7 @@ static int dw_mci_init_slot(struct dw_mci *host, unsigned int id)
 #ifdef CONFIG_MMC_DW_IDMAC
 		mmc->max_segs = host->ring_size;
 		mmc->max_blk_size = 65536;
-		mmc->max_seg_size = 0x1000;
+		mmc->max_seg_size = DW_MCI_DESC_DATA_LENGTH;
 		mmc->max_req_size = mmc->max_seg_size * host->ring_size;
 		mmc->max_blk_count = mmc->max_req_size / 512;
 #else
@@ -2618,9 +2639,6 @@ static struct dw_mci_of_quirks {
 	{
 		.quirk	= "broken-cd",
 		.id	= DW_MCI_QUIRK_BROKEN_CARD_DETECTION,
-	}, {
-		.quirk	= "disable-wp",
-		.id	= DW_MCI_QUIRK_NO_WRITE_PROTECT,
 	},
 };
 
@@ -2941,14 +2959,14 @@ void dw_mci_remove(struct dw_mci *host)
 {
 	int i;
 
-	mci_writel(host, RINTSTS, 0xFFFFFFFF);
-	mci_writel(host, INTMASK, 0); /* disable all mmc interrupt first */
-
 	for (i = 0; i < host->num_slots; i++) {
 		dev_dbg(host->dev, "remove slot %d\n", i);
 		if (host->slot[i])
 			dw_mci_cleanup_slot(host->slot[i], i);
 	}
+
+	mci_writel(host, RINTSTS, 0xFFFFFFFF);
+	mci_writel(host, INTMASK, 0); /* disable all mmc interrupt first */
 
 	/* disable clock to CIU */
 	mci_writel(host, CLKENA, 0);

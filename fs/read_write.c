@@ -504,7 +504,53 @@ vfs_readf_t vfs_readf(struct file *file)
 		return new_sync_read;
 	return ERR_PTR(-ENOSYS);
 }
+EXPORT_SYMBOL_GPL(vfs_readf);
+
+vfs_writef_t vfs_writef(struct file *file)
+{
+	const struct file_operations *fop = file->f_op;
+
+	if (fop->write)
+		return fop->write;
+	if (fop->write_iter)
+		return new_sync_write;
+	return ERR_PTR(-ENOSYS);
+}
+EXPORT_SYMBOL_GPL(vfs_writef);
+
+vfs_readf_t vfs_readf(struct file *file)
+{
+	const struct file_operations *fop = file->f_op;
+
+	if (fop->read)
+		return fop->read;
+	if (fop->read_iter)
+		return new_sync_read;
+	return ERR_PTR(-ENOSYS);
+}
 EXPORT_SYMBOL(vfs_readf);
+
+vfs_writef_t vfs_writef(struct file *file)
+{
+	const struct file_operations *fop = file->f_op;
+
+	if (fop->write)
+		return fop->write;
+	if (fop->write_iter)
+		return new_sync_write;
+	return ERR_PTR(-ENOSYS);
+}
+
+vfs_readf_t vfs_readf(struct file *file)
+{
+	const struct file_operations *fop = file->f_op;
+
+	if (fop->read)
+		return fop->read;
+	if (fop->read_iter)
+		return new_sync_read;
+	return ERR_PTR(-ENOSYS);
+}
 
 vfs_writef_t vfs_writef(struct file *file)
 {

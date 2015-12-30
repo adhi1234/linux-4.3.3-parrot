@@ -4184,6 +4184,47 @@ static int truncate_space_check(struct btrfs_trans_handle *trans,
 
 }
 
+static int truncate_inline_extent(struct inode *inode,
+				  struct btrfs_path *path,
+				  struct btrfs_key *found_key,
+				  const u64 item_end,
+				  const u64 new_size)
+{
+	struct extent_buffer *leaf = path->nodes[0];
+	int slot = path->slots[0];
+	struct btrfs_file_extent_item *fi;
+	u32 size = (u32)(new_size - found_key->offset);
+	struct btrfs_root *root = BTRFS_I(inode)->root;
+
+	fi = btrfs_item_ptr(leaf, slot, struct btrfs_file_extent_item);
+
+	if (btrfs_file_extent_compression(leaf, fi) != BTRFS_COMPRESS_NONE) {
+		loff_t offset = new_size;
+		loff_t page_end = ALIGN(offset, PAGE_CACHE_SIZE);
+
+		/*
+		 * Zero out the remaining of the last page of our inline extent,
+		 * instead of directly truncating our inline extent here - that
+		 * would be much more complex (decompressing all the data, then
+		 * compressing the truncated data, which might be bigger than
+		 * the size of the inline extent, resize the extent, etc).
+		 * We release the path because to get the page we might need to
+		 * read the extent item from disk (data not in the page cache).
+		 */
+		btrfs_release_path(path);
+		return btrfs_truncate_page(inode, offset, page_end - offset, 0);
+	}
+
+	btrfs_set_file_extent_ram_bytes(leaf, fi, size);
+	size = btrfs_file_extent_calc_inline_size(size);
+	btrfs_truncate_item(root, path, size, 1);
+
+	if (test_bit(BTRFS_ROOT_REF_COWS, &root->state))
+		inode_sub_bytes(inode, item_end + 1 - new_size);
+
+	return 0;
+}
+
 /*
  * this can truncate away extent items, csum items and directory items.
  * It starts at a high offset and removes keys until it can't find
@@ -4209,7 +4250,7 @@ int btrfs_truncate_inode_items(struct btrfs_trans_handle *trans,
 	u64 extent_num_bytes = 0;
 	u64 extent_offset = 0;
 	u64 item_end = 0;
-	u64 last_size = (u64)-1;
+	u64 last_size = new_size;
 	u32 found_type = (u8)-1;
 	int found_extent;
 	int del_item;
@@ -4378,27 +4419,40 @@ search_again:
 			 * special encodings
 			 */
 			if (!del_item &&
-			    btrfs_file_extent_compression(leaf, fi) == 0 &&
 			    btrfs_file_extent_encryption(leaf, fi) == 0 &&
 			    btrfs_file_extent_other_encoding(leaf, fi) == 0) {
-				u32 size = new_size - found_key.offset;
-
-				if (test_bit(BTRFS_ROOT_REF_COWS, &root->state))
-					inode_sub_bytes(inode, item_end + 1 -
-							new_size);
 
 				/*
-				 * update the ram bytes to properly reflect
-				 * the new size of our item
+				 * Need to release path in order to truncate a
+				 * compressed extent. So delete any accumulated
+				 * extent items so far.
 				 */
-				btrfs_set_file_extent_ram_bytes(leaf, fi, size);
-				size =
-				    btrfs_file_extent_calc_inline_size(size);
-				btrfs_truncate_item(root, path, size, 1);
+				if (btrfs_file_extent_compression(leaf, fi) !=
+				    BTRFS_COMPRESS_NONE && pending_del_nr) {
+					err = btrfs_del_items(trans, root, path,
+							      pending_del_slot,
+							      pending_del_nr);
+					if (err) {
+						btrfs_abort_transaction(trans,
+									root,
+									err);
+						goto error;
+					}
+					pending_del_nr = 0;
+				}
+
+				err = truncate_inline_extent(inode, path,
+							     &found_key,
+							     item_end,
+							     new_size);
+				if (err) {
+					btrfs_abort_transaction(trans,
+								root, err);
+					goto error;
+				}
 			} else if (test_bit(BTRFS_ROOT_REF_COWS,
 					    &root->state)) {
-				inode_sub_bytes(inode, item_end + 1 -
-						found_key.offset);
+				inode_sub_bytes(inode, item_end + 1 - new_size);
 			}
 		}
 delete:
@@ -4493,8 +4547,7 @@ out:
 			btrfs_abort_transaction(trans, root, ret);
 	}
 error:
-	if (last_size != (u64)-1 &&
-	    root->root_key.objectid != BTRFS_TREE_LOG_OBJECTID)
+	if (root->root_key.objectid != BTRFS_TREE_LOG_OBJECTID)
 		btrfs_ordered_update_i_size(inode, last_size, NULL);
 
 	btrfs_free_path(path);
@@ -4986,24 +5039,41 @@ static void evict_inode_truncate_pages(struct inode *inode)
 	}
 	write_unlock(&map_tree->lock);
 
+	/*
+	 * Keep looping until we have no more ranges in the io tree.
+	 * We can have ongoing bios started by readpages (called from readahead)
+	 * that have their endio callback (extent_io.c:end_bio_extent_readpage)
+	 * still in progress (unlocked the pages in the bio but did not yet
+	 * unlocked the ranges in the io tree). Therefore this means some
+	 * ranges can still be locked and eviction started because before
+	 * submitting those bios, which are executed by a separate task (work
+	 * queue kthread), inode references (inode->i_count) were not taken
+	 * (which would be dropped in the end io callback of each bio).
+	 * Therefore here we effectively end up waiting for those bios and
+	 * anyone else holding locked ranges without having bumped the inode's
+	 * reference count - if we don't do it, when they access the inode's
+	 * io_tree to unlock a range it may be too late, leading to an
+	 * use-after-free issue.
+	 */
 	spin_lock(&io_tree->lock);
 	while (!RB_EMPTY_ROOT(&io_tree->state)) {
 		struct extent_state *state;
 		struct extent_state *cached_state = NULL;
+		u64 start;
+		u64 end;
 
 		node = rb_first(&io_tree->state);
 		state = rb_entry(node, struct extent_state, rb_node);
-		atomic_inc(&state->refs);
+		start = state->start;
+		end = state->end;
 		spin_unlock(&io_tree->lock);
 
-		lock_extent_bits(io_tree, state->start, state->end,
-				 0, &cached_state);
-		clear_extent_bit(io_tree, state->start, state->end,
+		lock_extent_bits(io_tree, start, end, 0, &cached_state);
+		clear_extent_bit(io_tree, start, end,
 				 EXTENT_LOCKED | EXTENT_DIRTY |
 				 EXTENT_DELALLOC | EXTENT_DO_ACCOUNTING |
 				 EXTENT_DEFRAG, 1, 1,
 				 &cached_state, GFP_NOFS);
-		free_extent_state(state);
 
 		cond_resched();
 		spin_lock(&io_tree->lock);
@@ -5035,7 +5105,8 @@ void btrfs_evict_inode(struct inode *inode)
 		goto no_delete;
 	}
 	/* do we really want it for ->i_nlink > 0 and zero btrfs_root_refs? */
-	btrfs_wait_ordered_range(inode, 0, (u64)-1);
+	if (!special_file(inode->i_mode))
+		btrfs_wait_ordered_range(inode, 0, (u64)-1);
 
 	btrfs_free_io_failure_record(inode, 0, (u64)-1);
 
@@ -7530,6 +7601,7 @@ unlock:
 
 		current->journal_info = outstanding_extents;
 		btrfs_free_reserved_data_space(inode, len);
+		set_bit(BTRFS_INODE_DIO_READY, &BTRFS_I(inode)->runtime_flags);
 	}
 
 	/*
@@ -7855,8 +7927,6 @@ static void btrfs_endio_direct_write(struct bio *bio, int err)
 	struct bio *dio_bio;
 	int ret;
 
-	if (err)
-		goto out_done;
 again:
 	ret = btrfs_dec_test_first_ordered_pending(inode, &ordered,
 						   &ordered_offset,
@@ -7879,7 +7949,6 @@ out_test:
 		ordered = NULL;
 		goto again;
 	}
-out_done:
 	dio_bio = dip->dio_bio;
 
 	kfree(dip);
@@ -8147,9 +8216,8 @@ out_err:
 static void btrfs_submit_direct(int rw, struct bio *dio_bio,
 				struct inode *inode, loff_t file_offset)
 {
-	struct btrfs_root *root = BTRFS_I(inode)->root;
-	struct btrfs_dio_private *dip;
-	struct bio *io_bio;
+	struct btrfs_dio_private *dip = NULL;
+	struct bio *io_bio = NULL;
 	struct btrfs_io_bio *btrfs_bio;
 	int skip_sum;
 	int write = rw & REQ_WRITE;
@@ -8166,7 +8234,7 @@ static void btrfs_submit_direct(int rw, struct bio *dio_bio,
 	dip = kzalloc(sizeof(*dip), GFP_NOFS);
 	if (!dip) {
 		ret = -ENOMEM;
-		goto free_io_bio;
+		goto free_ordered;
 	}
 
 	dip->private = dio_bio->bi_private;
@@ -8194,25 +8262,55 @@ static void btrfs_submit_direct(int rw, struct bio *dio_bio,
 
 	if (btrfs_bio->end_io)
 		btrfs_bio->end_io(btrfs_bio, ret);
-free_io_bio:
-	bio_put(io_bio);
 
 free_ordered:
 	/*
-	 * If this is a write, we need to clean up the reserved space and kill
-	 * the ordered extent.
+	 * If we arrived here it means either we failed to submit the dip
+	 * or we either failed to clone the dio_bio or failed to allocate the
+	 * dip. If we cloned the dio_bio and allocated the dip, we can just
+	 * call bio_endio against our io_bio so that we get proper resource
+	 * cleanup if we fail to submit the dip, otherwise, we must do the
+	 * same as btrfs_endio_direct_[write|read] because we can't call these
+	 * callbacks - they require an allocated dip and a clone of dio_bio.
 	 */
-	if (write) {
-		struct btrfs_ordered_extent *ordered;
-		ordered = btrfs_lookup_ordered_extent(inode, file_offset);
-		if (!test_bit(BTRFS_ORDERED_PREALLOC, &ordered->flags) &&
-		    !test_bit(BTRFS_ORDERED_NOCOW, &ordered->flags))
-			btrfs_free_reserved_extent(root, ordered->start,
-						   ordered->disk_len, 1);
-		btrfs_put_ordered_extent(ordered);
-		btrfs_put_ordered_extent(ordered);
+	if (io_bio && dip) {
+		bio_endio(io_bio, ret);
+		/*
+		 * The end io callbacks free our dip, do the final put on io_bio
+		 * and all the cleanup and final put for dio_bio (through
+		 * dio_end_io()).
+		 */
+		dip = NULL;
+		io_bio = NULL;
+	} else {
+		if (write) {
+			struct btrfs_ordered_extent *ordered;
+
+			ordered = btrfs_lookup_ordered_extent(inode,
+							      file_offset);
+			set_bit(BTRFS_ORDERED_IOERR, &ordered->flags);
+			/*
+			 * Decrements our ref on the ordered extent and removes
+			 * the ordered extent from the inode's ordered tree,
+			 * doing all the proper resource cleanup such as for the
+			 * reserved space and waking up any waiters for this
+			 * ordered extent (through btrfs_remove_ordered_extent).
+			 */
+			btrfs_finish_ordered_io(ordered);
+		} else {
+			unlock_extent(&BTRFS_I(inode)->io_tree, file_offset,
+			      file_offset + dio_bio->bi_iter.bi_size - 1);
+		}
+		clear_bit(BIO_UPTODATE, &dio_bio->bi_flags);
+		/*
+		 * Releases and cleans up our dio_bio, no need to bio_put()
+		 * nor bio_endio()/bio_io_error() against dio_bio.
+		 */
+		dio_end_io(dio_bio, ret);
 	}
-	bio_endio(dio_bio, ret);
+	if (io_bio)
+		bio_put(io_bio);
+	kfree(dip);
 }
 
 static ssize_t check_direct_IO(struct btrfs_root *root, struct kiocb *iocb,
@@ -8314,9 +8412,18 @@ static ssize_t btrfs_direct_IO(struct kiocb *iocb, struct iov_iter *iter,
 				   btrfs_submit_direct, flags);
 	if (iov_iter_rw(iter) == WRITE) {
 		current->journal_info = NULL;
-		if (ret < 0 && ret != -EIOCBQUEUED)
-			btrfs_delalloc_release_space(inode, count);
-		else if (ret >= 0 && (size_t)ret < count)
+		if (ret < 0 && ret != -EIOCBQUEUED) {
+			/*
+			 * If the error comes from submitting stage,
+			 * btrfs_get_blocsk_direct() has free'd data space,
+			 * and metadata space will be handled by
+			 * finish_ordered_fn, don't do that again to make
+			 * sure bytes_may_use is correct.
+			 */
+			if (!test_and_clear_bit(BTRFS_INODE_DIO_READY,
+				     &BTRFS_I(inode)->runtime_flags))
+				btrfs_delalloc_release_space(inode, count);
+		} else if (ret >= 0 && (size_t)ret < count)
 			btrfs_delalloc_release_space(inode,
 						     count - (size_t)ret);
 	}

@@ -905,10 +905,8 @@ static int load_firmware(struct drxd_state *state, const char *fw_name)
 {
 	const struct firmware *fw;
 
-	if (request_firmware(&fw, fw_name, state->dev) < 0) {
-		printk(KERN_ERR "drxd: firmware load failure [%s]\n", fw_name);
+	if (request_firmware(&fw, fw_name, state->dev))
 		return -EIO;
-	}
 
 	state->microcode = kmemdup(fw->data, fw->size, GFP_KERNEL);
 	if (state->microcode == NULL) {
@@ -2805,7 +2803,7 @@ static int drxd_read_signal_strength(struct dvb_frontend *fe, u16 * strength)
 	return 0;
 }
 
-static int drxd_read_status(struct dvb_frontend *fe, fe_status_t * status)
+static int drxd_read_status(struct dvb_frontend *fe, enum fe_status *status)
 {
 	struct drxd_state *state = fe->demodulator_priv;
 	u32 lock;

@@ -816,11 +816,8 @@ static void cas_saturn_firmware_init(struct cas *cp)
 		return;
 
 	err = request_firmware(&fw, fw_name, &cp->pdev->dev);
-	if (err) {
-		pr_err("Failed to load firmware \"%s\"\n",
-		       fw_name);
+	if (err)
 		return;
-	}
 	if (fw->size < 2) {
 		pr_err("bogus length %zu in \"%s\"\n",
 		       fw->size, fw_name);
@@ -3058,7 +3055,6 @@ static void cas_init_mac(struct cas *cp)
 	/* setup core arbitration weight register */
 	writel(CAWR_RR_DIS, cp->regs + REG_CAWR);
 
-	/* XXX Use pci_dma_burst_advice() */
 #if !defined(CONFIG_SPARC64) && !defined(CONFIG_ALPHA)
 	/* set the infinite burst register for chips that don't have
 	 * pci issues.

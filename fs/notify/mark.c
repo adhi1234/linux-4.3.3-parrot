@@ -100,6 +100,7 @@ void fsnotify_get_mark(struct fsnotify_mark *mark)
 {
 	atomic_inc(&mark->refcnt);
 }
+EXPORT_SYMBOL(fsnotify_put_mark);
 
 void fsnotify_put_mark(struct fsnotify_mark *mark)
 {
@@ -109,7 +110,7 @@ void fsnotify_put_mark(struct fsnotify_mark *mark)
 		mark->free_mark(mark);
 	}
 }
-EXPORT_SYMBOL(fsnotify_put_mark);
+EXPORT_SYMBOL_GPL(fsnotify_put_mark);
 
 /* Calculate mask of events for a list of marks */
 u32 fsnotify_recalc_mask(struct hlist_head *head)
@@ -195,6 +196,7 @@ void fsnotify_destroy_mark_locked(struct fsnotify_mark *mark,
 
 	mutex_lock_nested(&group->mark_mutex, SINGLE_DEPTH_NESTING);
 }
+EXPORT_SYMBOL(fsnotify_destroy_mark);
 
 void fsnotify_destroy_mark(struct fsnotify_mark *mark,
 			   struct fsnotify_group *group)
@@ -203,7 +205,7 @@ void fsnotify_destroy_mark(struct fsnotify_mark *mark,
 	fsnotify_destroy_mark_locked(mark, group);
 	mutex_unlock(&group->mark_mutex);
 }
-EXPORT_SYMBOL(fsnotify_destroy_mark);
+EXPORT_SYMBOL_GPL(fsnotify_destroy_mark);
 
 /*
  * Destroy all marks in the given list. The marks must be already detached from
@@ -378,7 +380,7 @@ err:
 
 	return ret;
 }
-EXPORT_SYMBOL(fsnotify_add_mark);
+EXPORT_SYMBOL_GPL(fsnotify_add_mark);
 
 int fsnotify_add_mark(struct fsnotify_mark *mark, struct fsnotify_group *group,
 		      struct inode *inode, struct vfsmount *mnt, int allow_dups)
@@ -389,6 +391,7 @@ int fsnotify_add_mark(struct fsnotify_mark *mark, struct fsnotify_group *group,
 	mutex_unlock(&group->mark_mutex);
 	return ret;
 }
+EXPORT_SYMBOL(fsnotify_add_mark);
 
 /*
  * Given a list of marks, find the mark associated with given group. If found
@@ -478,7 +481,7 @@ void fsnotify_init_mark(struct fsnotify_mark *mark,
 	atomic_set(&mark->refcnt, 1);
 	mark->free_mark = free_mark;
 }
-EXPORT_SYMBOL(fsnotify_init_mark);
+EXPORT_SYMBOL_GPL(fsnotify_init_mark);
 
 static int fsnotify_mark_destroy(void *ignored)
 {
@@ -503,6 +506,7 @@ static int fsnotify_mark_destroy(void *ignored)
 
 	return 0;
 }
+EXPORT_SYMBOL(fsnotify_init_mark);
 
 static int __init fsnotify_mark_init(void)
 {

@@ -757,16 +757,17 @@ void kvmppc_core_flush_memslot(struct kvm *kvm, struct kvm_memory_slot *memslot)
 
 int kvmppc_core_prepare_memory_region(struct kvm *kvm,
 				struct kvm_memory_slot *memslot,
-				struct kvm_userspace_memory_region *mem)
+				const struct kvm_userspace_memory_region *mem)
 {
 	return kvm->arch.kvm_ops->prepare_memory_region(kvm, memslot, mem);
 }
 
 void kvmppc_core_commit_memory_region(struct kvm *kvm,
-				struct kvm_userspace_memory_region *mem,
-				const struct kvm_memory_slot *old)
+				const struct kvm_userspace_memory_region *mem,
+				const struct kvm_memory_slot *old,
+				const struct kvm_memory_slot *new)
 {
-	kvm->arch.kvm_ops->commit_memory_region(kvm, mem, old);
+	kvm->arch.kvm_ops->commit_memory_region(kvm, mem, old, new);
 }
 
 int kvm_unmap_hva(struct kvm *kvm, unsigned long hva)
@@ -826,12 +827,15 @@ int kvmppc_h_logical_ci_load(struct kvm_vcpu *vcpu)
 	unsigned long size = kvmppc_get_gpr(vcpu, 4);
 	unsigned long addr = kvmppc_get_gpr(vcpu, 5);
 	u64 buf;
+	int srcu_idx;
 	int ret;
 
 	if (!is_power_of_2(size) || (size > sizeof(buf)))
 		return H_TOO_HARD;
 
+	srcu_idx = srcu_read_lock(&vcpu->kvm->srcu);
 	ret = kvm_io_bus_read(vcpu, KVM_MMIO_BUS, addr, size, &buf);
+	srcu_read_unlock(&vcpu->kvm->srcu, srcu_idx);
 	if (ret != 0)
 		return H_TOO_HARD;
 
@@ -866,6 +870,7 @@ int kvmppc_h_logical_ci_store(struct kvm_vcpu *vcpu)
 	unsigned long addr = kvmppc_get_gpr(vcpu, 5);
 	unsigned long val = kvmppc_get_gpr(vcpu, 6);
 	u64 buf;
+	int srcu_idx;
 	int ret;
 
 	switch (size) {
@@ -889,7 +894,9 @@ int kvmppc_h_logical_ci_store(struct kvm_vcpu *vcpu)
 		return H_TOO_HARD;
 	}
 
+	srcu_idx = srcu_read_lock(&vcpu->kvm->srcu);
 	ret = kvm_io_bus_write(vcpu, KVM_MMIO_BUS, addr, size, &buf);
+	srcu_read_unlock(&vcpu->kvm->srcu, srcu_idx);
 	if (ret != 0)
 		return H_TOO_HARD;
 

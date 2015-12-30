@@ -1025,21 +1025,17 @@ int t3_get_edc_fw(struct cphy *phy, int edc_idx, int size)
 {
 	struct adapter *adapter = phy->adapter;
 	const struct firmware *fw;
-	char buf[64];
+	const char *fw_name;
 	u32 csum;
 	const __be32 *p;
 	u16 *cache = phy->phy_cache;
-	int i, ret;
+	int i, ret = -EINVAL;
 
-	snprintf(buf, sizeof(buf), get_edc_fw_name(edc_idx));
-
-	ret = request_firmware(&fw, buf, &adapter->pdev->dev);
-	if (ret < 0) {
-		dev_err(&adapter->pdev->dev,
-			"could not upgrade firmware: unable to load %s\n",
-			buf);
+	fw_name = get_edc_fw_name(edc_idx);
+	if (fw_name)
+		ret = request_firmware(&fw, fw_name, &adapter->pdev->dev);
+	if (ret)
 		return ret;
-	}
 
 	/* check size, take checksum in account */
 	if (fw->size > size + 4) {
@@ -1076,11 +1072,8 @@ static int upgrade_fw(struct adapter *adap)
 	struct device *dev = &adap->pdev->dev;
 
 	ret = request_firmware(&fw, FW_FNAME, dev);
-	if (ret < 0) {
-		dev_err(dev, "could not upgrade firmware: unable to load %s\n",
-			FW_FNAME);
+	if (ret)
 		return ret;
-	}
 	ret = t3_load_fw(adap, fw->data, fw->size);
 	release_firmware(fw);
 
@@ -1125,11 +1118,8 @@ static int update_tpsram(struct adapter *adap)
 	snprintf(buf, sizeof(buf), TPSRAM_NAME, rev);
 
 	ret = request_firmware(&tpsram, buf, dev);
-	if (ret < 0) {
-		dev_err(dev, "could not load TP SRAM: unable to load %s\n",
-			buf);
+	if (ret)
 		return ret;
-	}
 
 	ret = t3_check_tpsram(adap, tpsram->data, tpsram->size);
 	if (ret)

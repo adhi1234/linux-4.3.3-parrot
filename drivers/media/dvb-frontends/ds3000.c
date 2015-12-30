@@ -362,12 +362,8 @@ static int ds3000_firmware_ondemand(struct dvb_frontend *fe)
 				DS3000_DEFAULT_FIRMWARE);
 	ret = request_firmware(&fw, DS3000_DEFAULT_FIRMWARE,
 				state->i2c->dev.parent);
-	printk(KERN_INFO "%s: Waiting for firmware upload(2)...\n", __func__);
-	if (ret) {
-		printk(KERN_ERR "%s: No firmware uploaded (timeout or file not "
-				"found?)\n", __func__);
+	if (ret)
 		return ret;
-	}
 
 	ret = ds3000_load_firmware(fe, fw);
 	if (ret)
@@ -404,7 +400,8 @@ static int ds3000_load_firmware(struct dvb_frontend *fe,
 	return ret;
 }
 
-static int ds3000_set_voltage(struct dvb_frontend *fe, fe_sec_voltage_t voltage)
+static int ds3000_set_voltage(struct dvb_frontend *fe,
+			      enum fe_sec_voltage voltage)
 {
 	struct ds3000_state *state = fe->demodulator_priv;
 	u8 data;
@@ -431,7 +428,7 @@ static int ds3000_set_voltage(struct dvb_frontend *fe, fe_sec_voltage_t voltage)
 	return 0;
 }
 
-static int ds3000_read_status(struct dvb_frontend *fe, fe_status_t* status)
+static int ds3000_read_status(struct dvb_frontend *fe, enum fe_status *status)
 {
 	struct ds3000_state *state = fe->demodulator_priv;
 	struct dtv_frontend_properties *c = &fe->dtv_property_cache;
@@ -666,7 +663,7 @@ static int ds3000_read_ucblocks(struct dvb_frontend *fe, u32 *ucblocks)
 	return 0;
 }
 
-static int ds3000_set_tone(struct dvb_frontend *fe, fe_sec_tone_mode_t tone)
+static int ds3000_set_tone(struct dvb_frontend *fe, enum fe_sec_tone_mode tone)
 {
 	struct ds3000_state *state = fe->demodulator_priv;
 	u8 data;
@@ -766,7 +763,7 @@ static int ds3000_send_diseqc_msg(struct dvb_frontend *fe,
 
 /* Send DiSEqC burst */
 static int ds3000_diseqc_send_burst(struct dvb_frontend *fe,
-					fe_sec_mini_cmd_t burst)
+				    enum fe_sec_mini_cmd burst)
 {
 	struct ds3000_state *state = fe->demodulator_priv;
 	int i;
@@ -905,7 +902,7 @@ static int ds3000_set_frontend(struct dvb_frontend *fe)
 	struct dtv_frontend_properties *c = &fe->dtv_property_cache;
 
 	int i;
-	fe_status_t status;
+	enum fe_status status;
 	s32 offset_khz;
 	u32 frequency;
 	u16 value;
@@ -1045,7 +1042,7 @@ static int ds3000_tune(struct dvb_frontend *fe,
 			bool re_tune,
 			unsigned int mode_flags,
 			unsigned int *delay,
-			fe_status_t *status)
+			enum fe_status *status)
 {
 	if (re_tune) {
 		int ret = ds3000_set_frontend(fe);

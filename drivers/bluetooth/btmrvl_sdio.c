@@ -355,8 +355,6 @@ static int btmrvl_sdio_download_helper(struct btmrvl_sdio_card *card)
 	ret = request_firmware(&fw_helper, card->helper,
 						&card->func->dev);
 	if ((ret < 0) || !fw_helper) {
-		BT_ERR("request_firmware(helper) failed, error code = %d",
-									ret);
 		ret = -ENOENT;
 		goto done;
 	}
@@ -455,8 +453,6 @@ static int btmrvl_sdio_download_fw_w_helper(struct btmrvl_sdio_card *card)
 	ret = request_firmware(&fw_firmware, card->firmware,
 							&card->func->dev);
 	if ((ret < 0) || !fw_firmware) {
-		BT_ERR("request_firmware(firmware) failed, error code = %d",
-									ret);
 		ret = -ENOENT;
 		goto done;
 	}
@@ -1217,7 +1213,7 @@ static void btmrvl_sdio_dump_firmware(struct btmrvl_private *priv)
 	unsigned int reg, reg_start, reg_end;
 	enum rdwr_status stat;
 	u8 *dbg_ptr, *end_ptr, *fw_dump_data, *fw_dump_ptr;
-	u8 dump_num, idx, i, read_reg, doneflag = 0;
+	u8 dump_num = 0, idx, i, read_reg, doneflag = 0;
 	u32 memory_size, fw_dump_len = 0;
 
 	/* dump sdio register first */

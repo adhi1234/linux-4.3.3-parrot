@@ -401,10 +401,8 @@ static int tda10045_fwupload(struct dvb_frontend* fe)
 	/* request the firmware, this will block until someone uploads it */
 	printk(KERN_INFO "tda1004x: waiting for firmware upload (%s)...\n", TDA10045_DEFAULT_FIRMWARE);
 	ret = state->config->request_firmware(fe, &fw, TDA10045_DEFAULT_FIRMWARE);
-	if (ret) {
-		printk(KERN_ERR "tda1004x: no firmware upload (timeout or file not found?)\n");
+	if (ret)
 		return ret;
-	}
 
 	/* reset chip */
 	tda1004x_write_mask(state, TDA1004X_CONFC4, 0x10, 0);
@@ -545,7 +543,6 @@ static int tda10046_fwupload(struct dvb_frontend* fe)
 			/* remain compatible to old bug: try to load with tda10045 image name */
 			ret = state->config->request_firmware(fe, &fw, TDA10045_DEFAULT_FIRMWARE);
 			if (ret) {
-				printk(KERN_ERR "tda1004x: no firmware upload (timeout or file not found?)\n");
 				return ret;
 			} else {
 				printk(KERN_INFO "tda1004x: please rename the firmware file to %s\n",
@@ -650,7 +647,7 @@ static int tda10046_init(struct dvb_frontend* fe)
 
 	if (tda10046_fwupload(fe)) {
 		printk("tda1004x: firmware upload failed\n");
-			return -EIO;
+		return -EIO;
 	}
 
 	// tda setup
@@ -1005,7 +1002,8 @@ static int tda1004x_get_fe(struct dvb_frontend *fe)
 	return 0;
 }
 
-static int tda1004x_read_status(struct dvb_frontend* fe, fe_status_t * fe_status)
+static int tda1004x_read_status(struct dvb_frontend *fe,
+				enum fe_status *fe_status)
 {
 	struct tda1004x_state* state = fe->demodulator_priv;
 	int status;

@@ -376,10 +376,6 @@ out:
 	platform_device_unregister(pdev);
 
 	if (err) {
-		if (err != -EINVAL)
-			printk(KERN_ERR
-			       "r600_cp: Failed to load firmware \"%s\"\n",
-			       fw_name);
 		release_firmware(dev_priv->pfp_fw);
 		dev_priv->pfp_fw = NULL;
 		release_firmware(dev_priv->me_fw);
@@ -2483,7 +2479,7 @@ int r600_cp_dispatch_texture(struct drm_device *dev,
 	struct drm_buf *buf;
 	u32 *buffer;
 	const u8 __user *data;
-	int size, pass_size;
+	unsigned int size, pass_size;
 	u64 src_offset, dst_offset;
 
 	if (!radeon_check_offset(dev_priv, tex->offset)) {

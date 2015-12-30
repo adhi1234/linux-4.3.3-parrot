@@ -63,7 +63,7 @@ struct or51132_state
 	struct dvb_frontend frontend;
 
 	/* Demodulator private data */
-	fe_modulation_t current_modulation;
+	enum fe_modulation current_modulation;
 	u32 snr; /* Result of last SNR calculation */
 
 	/* Tuner private data */
@@ -292,7 +292,7 @@ static int or51132_setmode(struct dvb_frontend* fe)
 #define MOD_FWCLASS_UNKNOWN	0
 #define MOD_FWCLASS_VSB		1
 #define MOD_FWCLASS_QAM		2
-static int modulation_fw_class(fe_modulation_t modulation)
+static int modulation_fw_class(enum fe_modulation modulation)
 {
 	switch(modulation) {
 	case VSB_8:
@@ -341,11 +341,8 @@ static int or51132_set_parameters(struct dvb_frontend *fe)
 		printk("or51132: Waiting for firmware upload(%s)...\n",
 		       fwname);
 		ret = request_firmware(&fw, fwname, state->i2c->dev.parent);
-		if (ret) {
-			printk(KERN_WARNING "or51132: No firmware up"
-			       "loaded(timeout or file not found?)\n");
+		if (ret)
 			return ret;
-		}
 		ret = or51132_load_firmware(fe, fw);
 		release_firmware(fw);
 		if (ret) {
@@ -415,7 +412,7 @@ start:
 	return 0;
 }
 
-static int or51132_read_status(struct dvb_frontend* fe, fe_status_t* status)
+static int or51132_read_status(struct dvb_frontend *fe, enum fe_status *status)
 {
 	struct or51132_state* state = fe->demodulator_priv;
 	int reg;

@@ -98,6 +98,8 @@ static int tcf_mirred_init(struct net *net, struct nlattr *nla,
 			return ret;
 		ret = ACT_P_CREATED;
 	} else {
+		if (bind)
+			return 0;
 		if (!ovr) {
 			tcf_hash_release(a, bind);
 			return -EEXIST;
@@ -151,7 +153,7 @@ static int tcf_mirred(struct sk_buff *skb, const struct tc_action *a,
 	}
 
 	at = G_TC_AT(skb->tc_verd);
-	skb2 = skb_act_clone(skb, GFP_ATOMIC, m->tcf_action);
+	skb2 = skb_clone(skb, GFP_ATOMIC);
 	if (skb2 == NULL)
 		goto out;
 
@@ -166,6 +168,7 @@ static int tcf_mirred(struct sk_buff *skb, const struct tc_action *a,
 
 	skb2->skb_iif = skb->dev->ifindex;
 	skb2->dev = dev;
+	skb_sender_cpu_clear(skb2);
 	err = dev_queue_xmit(skb2);
 
 out:

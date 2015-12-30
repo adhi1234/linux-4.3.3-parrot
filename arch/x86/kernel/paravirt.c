@@ -41,10 +41,18 @@
 #include <asm/timer.h>
 #include <asm/special_insns.h>
 
-/* nop stub */
-void _paravirt_nop(void)
-{
-}
+/*
+ * nop stub, which must not clobber anything *including the stack* to
+ * avoid confusing the entry prologues.
+ */
+extern void _paravirt_nop(void);
+asm (".pushsection .entry.text, \"ax\"\n"
+     ".global _paravirt_nop\n"
+     "_paravirt_nop:\n\t"
+     "ret\n\t"
+     ".size _paravirt_nop, . - _paravirt_nop\n\t"
+     ".type _paravirt_nop, @function\n\t"
+     ".popsection");
 
 /* identity function, which can be inlined */
 u32 _paravirt_ident_32(u32 x)
@@ -154,7 +162,9 @@ unsigned paravirt_patch_default(u8 type, u16 clobbers, void *insnbuf,
 		ret = paravirt_patch_ident_64(insnbuf, len);
 
 	else if (type == PARAVIRT_PATCH(pv_cpu_ops.iret) ||
+#ifdef CONFIG_X86_32
 		 type == PARAVIRT_PATCH(pv_cpu_ops.irq_enable_sysexit) ||
+#endif
 		 type == PARAVIRT_PATCH(pv_cpu_ops.usergs_sysret32) ||
 		 type == PARAVIRT_PATCH(pv_cpu_ops.usergs_sysret64))
 		/* If operation requires a jmp, then jmp */
@@ -371,7 +381,7 @@ __visible struct pv_cpu_ops pv_cpu_ops = {
 
 	.load_sp0 = native_load_sp0,
 
-#if defined(CONFIG_X86_32) || defined(CONFIG_IA32_EMULATION)
+#if defined(CONFIG_X86_32)
 	.irq_enable_sysexit = native_irq_enable_sysexit,
 #endif
 #ifdef CONFIG_X86_64

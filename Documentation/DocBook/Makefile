@@ -56,16 +56,24 @@ htmldocs: $(HTML)
 
 MAN := $(patsubst %.xml, %.9, $(BOOKS))
 mandocs: $(MAN)
-	find $(obj)/man -name '*.9' | xargs gzip -f
+	find $(obj)/man -name '*.9' | xargs gzip -nf
 
 installmandocs: mandocs
 	mkdir -p /usr/local/man/man9/
-	install $(obj)/man/*.9.gz /usr/local/man/man9/
+	find $(obj)/man -name '*.9.gz' -printf '%h %f\n' | \
+		sort -k 2 -k 1 | uniq -f 1 | sed -e 's: :/:' | \
+		xargs install -t /usr/local/man/man9/
 
 ###
 #External programs used
 KERNELDOC = $(srctree)/scripts/kernel-doc
 DOCPROC   = $(objtree)/scripts/docproc
+CHECK_LC_CTYPE = $(objtree)/scripts/check-lc_ctype
+
+# Use a fixed encoding - UTF-8 if the C library has support built-in
+# or ASCII if not
+LC_CTYPE := $(call try-run, LC_CTYPE=C.UTF-8 $(CHECK_LC_CTYPE),C.UTF-8,C)
+export LC_CTYPE
 
 XMLTOFLAGS = -m $(srctree)/$(src)/stylesheet.xsl
 XMLTOFLAGS += --skip-validation
@@ -150,12 +158,12 @@ quiet_cmd_db2html = HTML    $@
             cp $(PNG-$(basename $(notdir $@))) $(patsubst %.html,%,$@); fi
 
 quiet_cmd_db2man = MAN     $@
-      cmd_db2man = if grep -q refentry $<; then xmlto man $(XMLTOFLAGS) -o $(obj)/man $< ; fi
+      cmd_db2man = if grep -q refentry $<; then xmlto man $(XMLTOFLAGS) -o $(obj)/man/$(*F) $< ; fi
 %.9 : %.xml
 	@(which xmlto > /dev/null 2>&1) || \
 	 (echo "*** You need to install xmlto ***"; \
 	  exit 1)
-	$(Q)mkdir -p $(obj)/man
+	$(Q)mkdir -p $(obj)/man/$(*F)
 	$(call cmd,db2man)
 	@touch $@
 

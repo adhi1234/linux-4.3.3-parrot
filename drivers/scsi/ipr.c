@@ -4010,10 +4010,8 @@ static ssize_t ipr_store_update_fw(struct device *dev,
 	len = snprintf(fname, 99, "%s", buf);
 	fname[len-1] = '\0';
 
-	if (request_firmware(&fw_entry, fname, &ioa_cfg->pdev->dev)) {
-		dev_err(&ioa_cfg->pdev->dev, "Firmware file %s not found\n", fname);
+	if (request_firmware(&fw_entry, fname, &ioa_cfg->pdev->dev))
 		return -EIO;
-	}
 
 	image_hdr = (struct ipr_ucode_image_header *)fw_entry->data;
 
@@ -4554,7 +4552,7 @@ static ssize_t ipr_store_raw_mode(struct device *dev,
 	spin_lock_irqsave(ioa_cfg->host->host_lock, lock_flags);
 	res = (struct ipr_resource_entry *)sdev->hostdata;
 	if (res) {
-		if (ioa_cfg->sis64 && ipr_is_af_dasd_device(res)) {
+		if (ipr_is_af_dasd_device(res)) {
 			res->raw_mode = simple_strtoul(buf, NULL, 10);
 			len = strlen(buf);
 			if (res->sdev)

@@ -2034,18 +2034,12 @@ struct net_device *init_ft1000_card(struct pcmcia_device *link,
 	info->AsicID = ft1000_read_reg(dev, FT1000_REG_ASIC_ID);
 	if (info->AsicID == ELECTRABUZZ_ID) {
 		pr_debug("ELECTRABUZZ ASIC\n");
-		if (request_firmware(&fw_entry, "ft1000.img",
-				     &link->dev) != 0) {
-			pr_info("Could not open ft1000.img\n");
+		if (request_firmware(&fw_entry, "ft1000.img", &link->dev) != 0)
 			goto err_unreg;
-		}
 	} else {
 		pr_debug("MAGNEMITE ASIC\n");
-		if (request_firmware(&fw_entry, "ft2000.img",
-				     &link->dev) != 0) {
-			pr_info("Could not open ft2000.img\n");
+		if (request_firmware(&fw_entry, "ft2000.img", &link->dev) != 0)
 			goto err_unreg;
-		}
 	}
 
 	ft1000_enable_interrupts(dev);

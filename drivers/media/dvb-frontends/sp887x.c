@@ -416,7 +416,7 @@ static int sp887x_setup_frontend_parameters(struct dvb_frontend *fe)
 	return 0;
 }
 
-static int sp887x_read_status(struct dvb_frontend* fe, fe_status_t* status)
+static int sp887x_read_status(struct dvb_frontend *fe, enum fe_status *status)
 {
 	struct sp887x_state* state = fe->demodulator_priv;
 	u16 snr12 = sp887x_readreg(state, 0xf16);
@@ -527,10 +527,8 @@ static int sp887x_init(struct dvb_frontend* fe)
 		/* request the firmware, this will block until someone uploads it */
 		printk("sp887x: waiting for firmware upload (%s)...\n", SP887X_DEFAULT_FIRMWARE);
 		ret = state->config->request_firmware(fe, &fw, SP887X_DEFAULT_FIRMWARE);
-		if (ret) {
-			printk("sp887x: no firmware upload (timeout or file not found?)\n");
+		if (ret)
 			return ret;
-		}
 
 		ret = sp887x_initial_setup(fe, fw);
 		release_firmware(fw);

@@ -120,7 +120,15 @@ static char au_esc_chars[0x20 + 3]; /* 0x01-0x20, backslash, del, and NULL */
 
 int au_seq_path(struct seq_file *seq, struct path *path)
 {
-	return seq_path(seq, path, au_esc_chars);
+	int err;
+
+	err = seq_path(seq, path, au_esc_chars);
+	if (err > 0)
+		err = 0;
+	else if (err < 0)
+		err = -ENOMEM;
+
+	return err;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -138,6 +146,10 @@ static int __init aufs_init(void)
 	*p = 0;
 
 	au_dir_roflags = au_file_roflags(O_DIRECTORY | O_LARGEFILE);
+
+	memcpy(aufs_iop_nogetattr, aufs_iop, sizeof(aufs_iop));
+	for (i = 0; i < AuIop_Last; i++)
+		aufs_iop_nogetattr[i].getattr = NULL;
 
 	au_sbilist_init();
 	sysaufs_brs_init();

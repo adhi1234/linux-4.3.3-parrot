@@ -21,7 +21,7 @@ MODULE_AUTHOR("Stas Sergeev <stsp@users.sourceforge.net>");
 MODULE_DESCRIPTION("PC-Speaker driver");
 MODULE_LICENSE("GPL");
 MODULE_SUPPORTED_DEVICE("{{PC-Speaker, pcsp}}");
-MODULE_ALIAS("platform:pcspkr");
+/*MODULE_ALIAS("platform:pcspkr");*/
 
 static int index = SNDRV_DEFAULT_IDX1;	/* Index 0-MAX */
 static char *id = SNDRV_DEFAULT_STR1;	/* ID for this card */
@@ -42,16 +42,13 @@ struct snd_pcsp pcsp_chip;
 static int snd_pcsp_create(struct snd_card *card)
 {
 	static struct snd_device_ops ops = { };
-	struct timespec tp;
-	int err;
-	int div, min_div, order;
-
-	hrtimer_get_res(CLOCK_MONOTONIC, &tp);
+	unsigned int resolution = hrtimer_resolution;
+	int err, div, min_div, order;
 
 	if (!nopcm) {
-		if (tp.tv_sec || tp.tv_nsec > PCSP_MAX_PERIOD_NS) {
+		if (resolution > PCSP_MAX_PERIOD_NS) {
 			printk(KERN_ERR "PCSP: Timer resolution is not sufficient "
-				"(%linS)\n", tp.tv_nsec);
+				"(%unS)\n", resolution);
 			printk(KERN_ERR "PCSP: Make sure you have HPET and ACPI "
 				"enabled.\n");
 			printk(KERN_ERR "PCSP: Turned into nopcm mode.\n");
@@ -59,13 +56,13 @@ static int snd_pcsp_create(struct snd_card *card)
 		}
 	}
 
-	if (loops_per_jiffy >= PCSP_MIN_LPJ && tp.tv_nsec <= PCSP_MIN_PERIOD_NS)
+	if (loops_per_jiffy >= PCSP_MIN_LPJ && resolution <= PCSP_MIN_PERIOD_NS)
 		min_div = MIN_DIV;
 	else
 		min_div = MAX_DIV;
 #if PCSP_DEBUG
-	printk(KERN_DEBUG "PCSP: lpj=%li, min_div=%i, res=%li\n",
-	       loops_per_jiffy, min_div, tp.tv_nsec);
+	printk(KERN_DEBUG "PCSP: lpj=%li, min_div=%i, res=%u\n",
+	       loops_per_jiffy, min_div, resolution);
 #endif
 
 	div = MAX_DIV / min_div;

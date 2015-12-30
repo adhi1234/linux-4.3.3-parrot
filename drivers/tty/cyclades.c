@@ -2861,9 +2861,7 @@ static void cy_throttle(struct tty_struct *tty)
 	unsigned long flags;
 
 #ifdef CY_DEBUG_THROTTLE
-	char buf[64];
-
-	printk(KERN_DEBUG "cyc:throttle %s: %ld...ttyC%d\n", tty_name(tty, buf),
+	printk(KERN_DEBUG "cyc:throttle %s: %ld...ttyC%d\n", tty_name(tty),
 			tty->ldisc.chars_in_buffer(tty), info->line);
 #endif
 
@@ -2902,10 +2900,8 @@ static void cy_unthrottle(struct tty_struct *tty)
 	unsigned long flags;
 
 #ifdef CY_DEBUG_THROTTLE
-	char buf[64];
-
 	printk(KERN_DEBUG "cyc:unthrottle %s: %ld...ttyC%d\n",
-		tty_name(tty, buf), tty_chars_in_buffer(tty), info->line);
+		tty_name(tty), tty_chars_in_buffer(tty), info->line);
 #endif
 
 	if (serial_paranoia_check(info, tty->name, "cy_unthrottle"))
@@ -3522,10 +3518,8 @@ static int cyz_load_fw(struct pci_dev *pdev, void __iomem *base_addr,
 	int retval;
 
 	retval = request_firmware(&fw, "cyzfirm.bin", &pdev->dev);
-	if (retval) {
-		dev_err(&pdev->dev, "can't get firmware\n");
+	if (retval)
 		goto err;
-	}
 
 	/* Check whether the firmware is already loaded and running. If
 	   positive, skip this board */

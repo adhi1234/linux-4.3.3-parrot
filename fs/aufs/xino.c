@@ -258,7 +258,7 @@ int au_xino_trunc(struct super_block *sb, aufs_bindex_t bindex)
 	struct au_xino_lock_dir ldir;
 
 	err = -ENOMEM;
-	st = kzalloc(sizeof(*st), GFP_NOFS);
+	st = kmalloc(sizeof(*st), GFP_NOFS);
 	if (unlikely(!st))
 		goto out;
 
@@ -1282,10 +1282,9 @@ int au_xino_path(struct seq_file *seq, struct file *file)
 	int err;
 
 	err = au_seq_path(seq, &file->f_path);
-	if (unlikely(err < 0))
+	if (unlikely(err))
 		goto out;
 
-	err = 0;
 #define Deleted "\\040(deleted)"
 	seq->count -= sizeof(Deleted) - 1;
 	AuDebugOn(memcmp(seq->buf + seq->count, Deleted,

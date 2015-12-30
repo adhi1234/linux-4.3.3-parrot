@@ -92,10 +92,8 @@ static int go7007_load_encoder(struct go7007 *go)
 	u16 intr_val, intr_data;
 
 	if (go->boot_fw == NULL) {
-		if (request_firmware(&fw_entry, fw_name, go->dev)) {
-			v4l2_err(go, "unable to load firmware from file \"%s\"\n", fw_name);
+		if (request_firmware(&fw_entry, fw_name, go->dev))
 			return -1;
-		}
 		if (fw_entry->size < 16 || memcmp(fw_entry->data, "WISGO7007FW", 11)) {
 			v4l2_err(go, "file \"%s\" does not appear to be go7007 firmware\n", fw_name);
 			release_firmware(fw_entry);
@@ -446,7 +444,7 @@ static void go7007_motion_regions(struct go7007 *go, struct go7007_buffer *vb)
  */
 static struct go7007_buffer *frame_boundary(struct go7007 *go, struct go7007_buffer *vb)
 {
-	u32 *bytesused = &vb->vb.v4l2_planes[0].bytesused;
+	u32 *bytesused;
 	struct go7007_buffer *vb_tmp = NULL;
 
 	if (vb == NULL) {
@@ -458,6 +456,7 @@ static struct go7007_buffer *frame_boundary(struct go7007 *go, struct go7007_buf
 		go->next_seq++;
 		return vb;
 	}
+	bytesused = &vb->vb.v4l2_planes[0].bytesused;
 
 	vb->vb.v4l2_buf.sequence = go->next_seq++;
 	if (vb->modet_active && *bytesused + 216 < GO7007_BUF_SIZE)

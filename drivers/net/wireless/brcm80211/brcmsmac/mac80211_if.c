@@ -41,8 +41,7 @@
 #define BRCMS_FLUSH_TIMEOUT	500 /* msec */
 
 /* Flags we support */
-#define MAC_FILTERS (FIF_PROMISC_IN_BSS | \
-	FIF_ALLMULTI | \
+#define MAC_FILTERS (FIF_ALLMULTI | \
 	FIF_FCSFAIL | \
 	FIF_CONTROL | \
 	FIF_OTHER_BSS | \
@@ -379,19 +378,13 @@ static int brcms_request_fw(struct brcms_info *wl, struct bcma_device *pdev)
 		sprintf(fw_name, "%s-%d.fw", brcms_firmwares[i],
 			UCODE_LOADER_API_VER);
 		status = request_firmware(&wl->fw.fw_bin[i], fw_name, device);
-		if (status) {
-			wiphy_err(wl->wiphy, "%s: fail to load firmware %s\n",
-				  KBUILD_MODNAME, fw_name);
+		if (status)
 			return status;
-		}
 		sprintf(fw_name, "%s_hdr-%d.fw", brcms_firmwares[i],
 			UCODE_LOADER_API_VER);
 		status = request_firmware(&wl->fw.fw_hdr[i], fw_name, device);
-		if (status) {
-			wiphy_err(wl->wiphy, "%s: fail to load firmware %s\n",
-				  KBUILD_MODNAME, fw_name);
+		if (status)
 			return status;
-		}
 		wl->fw.hdr_num_entries[i] =
 		    wl->fw.fw_hdr[i]->size / (sizeof(struct firmware_hdr));
 	}
@@ -743,8 +736,6 @@ brcms_ops_configure_filter(struct ieee80211_hw *hw,
 	changed_flags &= MAC_FILTERS;
 	*total_flags &= MAC_FILTERS;
 
-	if (changed_flags & FIF_PROMISC_IN_BSS)
-		brcms_dbg_info(core, "FIF_PROMISC_IN_BSS\n");
 	if (changed_flags & FIF_ALLMULTI)
 		brcms_dbg_info(core, "FIF_ALLMULTI\n");
 	if (changed_flags & FIF_FCSFAIL)
@@ -1063,10 +1054,9 @@ static int ieee_hw_rate_init(struct ieee80211_hw *hw)
  */
 static int ieee_hw_init(struct ieee80211_hw *hw)
 {
-	hw->flags = IEEE80211_HW_SIGNAL_DBM
-	    /* | IEEE80211_HW_CONNECTION_MONITOR  What is this? */
-	    | IEEE80211_HW_REPORTS_TX_ACK_STATUS
-	    | IEEE80211_HW_AMPDU_AGGREGATION;
+	ieee80211_hw_set(hw, AMPDU_AGGREGATION);
+	ieee80211_hw_set(hw, SIGNAL_DBM);
+	ieee80211_hw_set(hw, REPORTS_TX_ACK_STATUS);
 
 	hw->extra_tx_headroom = brcms_c_get_header_len();
 	hw->queues = N_TX_QUEUES;

@@ -3125,9 +3125,8 @@ static int mv643xx_eth_probe(struct platform_device *pdev)
 
 	mib_counters_clear(mp);
 
-	init_timer(&mp->mib_counters_timer);
-	mp->mib_counters_timer.data = (unsigned long)mp;
-	mp->mib_counters_timer.function = mib_counters_timer_wrapper;
+	setup_timer(&mp->mib_counters_timer, mib_counters_timer_wrapper,
+		    (unsigned long)mp);
 	mp->mib_counters_timer.expires = jiffies + 30 * HZ;
 
 	spin_lock_init(&mp->mib_counters_lock);
@@ -3136,9 +3135,7 @@ static int mv643xx_eth_probe(struct platform_device *pdev)
 
 	netif_napi_add(dev, &mp->napi, mv643xx_eth_poll, NAPI_POLL_WEIGHT);
 
-	init_timer(&mp->rx_oom);
-	mp->rx_oom.data = (unsigned long)mp;
-	mp->rx_oom.function = oom_timer_wrapper;
+	setup_timer(&mp->rx_oom, oom_timer_wrapper, (unsigned long)mp);
 
 
 	res = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
@@ -3150,11 +3147,11 @@ static int mv643xx_eth_probe(struct platform_device *pdev)
 	dev->watchdog_timeo = 2 * HZ;
 	dev->base_addr = 0;
 
-	dev->features = NETIF_F_SG | NETIF_F_IP_CSUM | NETIF_F_TSO;
+	dev->features = NETIF_F_SG | NETIF_F_IP_CSUM;
 	dev->vlan_features = dev->features;
 
 	dev->features |= NETIF_F_RXCSUM;
-	dev->hw_features = dev->features;
+	dev->hw_features = dev->features  | NETIF_F_TSO;
 
 	dev->priv_flags |= IFF_UNICAST_FLT;
 	dev->gso_max_segs = MV643XX_MAX_TSO_SEGS;

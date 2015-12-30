@@ -127,7 +127,7 @@ int au_loopback_init(void)
 	int err;
 	struct super_block *sb __maybe_unused;
 
-	AuDebugOn(sizeof(sb->s_magic) != sizeof(unsigned long));
+	BUILD_BUG_ON(sizeof(sb->s_magic) != sizeof(unsigned long));
 
 	err = 0;
 	au_warn_loopback_array = kcalloc(au_warn_loopback_step,
@@ -140,6 +140,7 @@ int au_loopback_init(void)
 
 void au_loopback_fin(void)
 {
-	symbol_put(loop_backing_file);
+	if (backing_file_func)
+		symbol_put(loop_backing_file);
 	kfree(au_warn_loopback_array);
 }

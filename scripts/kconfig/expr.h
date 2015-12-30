@@ -29,7 +29,9 @@ typedef enum tristate {
 } tristate;
 
 enum expr_type {
-	E_NONE, E_OR, E_AND, E_NOT, E_EQUAL, E_UNEQUAL, E_LIST, E_SYMBOL, E_RANGE
+	E_NONE, E_OR, E_AND, E_NOT,
+	E_EQUAL, E_UNEQUAL, E_LTH, E_LEQ, E_GTH, E_GEQ,
+	E_LIST, E_SYMBOL, E_RANGE
 };
 
 union expr_data {
@@ -111,6 +113,8 @@ struct symbol {
 
 /* Set symbol to y if allnoconfig; used for symbols that hide others */
 #define SYMBOL_ALLNOCONFIG_Y 0x200000
+
+#define SYMBOL_NEW        0x200000 /* symbol is new (loaded config did not provide a value) */
 
 #define SYMBOL_MAXLENGTH	256
 #define SYMBOL_HASHSIZE		9973

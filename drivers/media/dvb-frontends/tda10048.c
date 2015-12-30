@@ -495,8 +495,6 @@ static int tda10048_firmware_upload(struct dvb_frontend *fe)
 	ret = request_firmware(&fw, TDA10048_DEFAULT_FIRMWARE,
 		state->i2c->dev.parent);
 	if (ret) {
-		printk(KERN_ERR "%s: Upload failed. (file not found?)\n",
-			__func__);
 		return -EIO;
 	} else {
 		printk(KERN_INFO "%s: firmware read %Zu bytes.\n",
@@ -792,7 +790,7 @@ static int tda10048_init(struct dvb_frontend *fe)
 	return ret;
 }
 
-static int tda10048_read_status(struct dvb_frontend *fe, fe_status_t *status)
+static int tda10048_read_status(struct dvb_frontend *fe, enum fe_status *status)
 {
 	struct tda10048_state *state = fe->demodulator_priv;
 	u8 reg;

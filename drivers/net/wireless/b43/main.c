@@ -2253,19 +2253,8 @@ int b43_do_request_fw(struct b43_request_fw_context *ctx,
 	}
 	err = request_firmware(&ctx->blob, ctx->fwname,
 			       ctx->dev->dev->dev);
-	if (err == -ENOENT) {
-		snprintf(ctx->errors[ctx->req_type],
-			 sizeof(ctx->errors[ctx->req_type]),
-			 "Firmware file \"%s\" not found\n",
-			 ctx->fwname);
+	if (err)
 		return err;
-	} else if (err) {
-		snprintf(ctx->errors[ctx->req_type],
-			 sizeof(ctx->errors[ctx->req_type]),
-			 "Firmware file \"%s\" request failed (err=%d)\n",
-			 ctx->fwname, err);
-		return err;
-	}
 fw_ready:
 	if (ctx->blob->size < sizeof(struct b43_fw_header))
 		goto err_format;
@@ -3131,8 +3120,6 @@ static void b43_adjust_opmode(struct b43_wldev *dev)
 		ctl |= B43_MACCTL_KEEP_BAD;
 	if (wl->filter_flags & FIF_PLCPFAIL)
 		ctl |= B43_MACCTL_KEEP_BADPLCP;
-	if (wl->filter_flags & FIF_PROMISC_IN_BSS)
-		ctl |= B43_MACCTL_PROMISC;
 	if (wl->filter_flags & FIF_BCN_PRBRESP_PROMISC)
 		ctl |= B43_MACCTL_BEACPROMISC;
 
@@ -4310,16 +4297,14 @@ static void b43_op_configure_filter(struct ieee80211_hw *hw,
 		goto out_unlock;
 	}
 
-	*fflags &= FIF_PROMISC_IN_BSS |
-		  FIF_ALLMULTI |
+	*fflags &= FIF_ALLMULTI |
 		  FIF_FCSFAIL |
 		  FIF_PLCPFAIL |
 		  FIF_CONTROL |
 		  FIF_OTHER_BSS |
 		  FIF_BCN_PRBRESP_PROMISC;
 
-	changed &= FIF_PROMISC_IN_BSS |
-		   FIF_ALLMULTI |
+	changed &= FIF_ALLMULTI |
 		   FIF_FCSFAIL |
 		   FIF_PLCPFAIL |
 		   FIF_CONTROL |
@@ -5613,8 +5598,8 @@ static struct b43_wl *b43_wireless_init(struct b43_bus_dev *dev)
 	wl = hw_to_b43_wl(hw);
 
 	/* fill hw info */
-	hw->flags = IEEE80211_HW_RX_INCLUDES_FCS |
-		    IEEE80211_HW_SIGNAL_DBM;
+	ieee80211_hw_set(hw, RX_INCLUDES_FCS);
+	ieee80211_hw_set(hw, SIGNAL_DBM);
 
 	hw->wiphy->interface_modes =
 		BIT(NL80211_IFTYPE_AP) |

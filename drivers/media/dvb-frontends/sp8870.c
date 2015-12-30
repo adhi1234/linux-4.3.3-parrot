@@ -315,10 +315,8 @@ static int sp8870_init (struct dvb_frontend* fe)
 
 	/* request the firmware, this will block until someone uploads it */
 	printk("sp8870: waiting for firmware upload (%s)...\n", SP8870_DEFAULT_FIRMWARE);
-	if (state->config->request_firmware(fe, &fw, SP8870_DEFAULT_FIRMWARE)) {
-		printk("sp8870: no firmware upload (timeout or file not found?)\n");
+	if (state->config->request_firmware(fe, &fw, SP8870_DEFAULT_FIRMWARE))
 		return -EIO;
-	}
 
 	if (sp8870_firmware_upload(state, fw)) {
 		printk("sp8870: writing firmware to device failed\n");
@@ -350,7 +348,8 @@ static int sp8870_init (struct dvb_frontend* fe)
 	return 0;
 }
 
-static int sp8870_read_status (struct dvb_frontend* fe, fe_status_t * fe_status)
+static int sp8870_read_status(struct dvb_frontend *fe,
+			      enum fe_status *fe_status)
 {
 	struct sp8870_state* state = fe->demodulator_priv;
 	int status;

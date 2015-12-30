@@ -18,7 +18,6 @@
 
 #include <target/target_core_base.h>
 #include <target/target_core_fabric.h>
-#include <target/target_core_configfs.h>
 
 #include <target/iscsi/iscsi_target_core.h>
 #include "iscsi_target_erl0.h"
@@ -67,9 +66,12 @@ int iscsit_load_discovery_tpg(void)
 		pr_err("Unable to allocate struct iscsi_portal_group\n");
 		return -1;
 	}
-
-	ret = core_tpg_register(&iscsi_ops, NULL, &tpg->tpg_se_tpg,
-				tpg, TRANSPORT_TPG_TYPE_DISCOVERY);
+	/*
+	 * Save iscsi_ops pointer for special case discovery TPG that
+	 * doesn't exist as se_wwn->wwn_group within configfs.
+	 */
+	tpg->tpg_se_tpg.se_tpg_tfo = &iscsi_ops;
+	ret = core_tpg_register(NULL, &tpg->tpg_se_tpg, -1);
 	if (ret < 0) {
 		kfree(tpg);
 		return -1;
@@ -280,8 +282,6 @@ int iscsit_tpg_del_portal_group(
 		return -EPERM;
 	}
 
-	core_tpg_clear_object_luns(&tpg->tpg_se_tpg);
-
 	if (tpg->param_list) {
 		iscsi_release_param_list(tpg->param_list);
 		tpg->param_list = NULL;
@@ -460,7 +460,6 @@ static bool iscsit_tpg_check_network_portal(
 struct iscsi_tpg_np *iscsit_tpg_add_network_portal(
 	struct iscsi_portal_group *tpg,
 	struct __kernel_sockaddr_storage *sockaddr,
-	char *ip_str,
 	struct iscsi_tpg_np *tpg_np_parent,
 	int network_transport)
 {
@@ -470,8 +469,8 @@ struct iscsi_tpg_np *iscsit_tpg_add_network_portal(
 	if (!tpg_np_parent) {
 		if (iscsit_tpg_check_network_portal(tpg->tpg_tiqn, sockaddr,
 				network_transport)) {
-			pr_err("Network Portal: %s already exists on a"
-				" different TPG on %s\n", ip_str,
+			pr_err("Network Portal: %pISc already exists on a"
+				" different TPG on %s\n", sockaddr,
 				tpg->tpg_tiqn->tiqn);
 			return ERR_PTR(-EEXIST);
 		}
@@ -484,7 +483,7 @@ struct iscsi_tpg_np *iscsit_tpg_add_network_portal(
 		return ERR_PTR(-ENOMEM);
 	}
 
-	np = iscsit_add_np(sockaddr, ip_str, network_transport);
+	np = iscsit_add_np(sockaddr, network_transport);
 	if (IS_ERR(np)) {
 		kfree(tpg_np);
 		return ERR_CAST(np);
@@ -514,8 +513,8 @@ struct iscsi_tpg_np *iscsit_tpg_add_network_portal(
 		spin_unlock(&tpg_np_parent->tpg_np_parent_lock);
 	}
 
-	pr_debug("CORE[%s] - Added Network Portal: %s:%hu,%hu on %s\n",
-		tpg->tpg_tiqn->tiqn, np->np_ip, np->np_port, tpg->tpgt,
+	pr_debug("CORE[%s] - Added Network Portal: %pISc:%hu,%hu on %s\n",
+		tpg->tpg_tiqn->tiqn, &np->np_sockaddr, np->np_port, tpg->tpgt,
 		np->np_transport->name);
 
 	return tpg_np;
@@ -528,8 +527,8 @@ static int iscsit_tpg_release_np(
 {
 	iscsit_clear_tpg_np_login_thread(tpg_np, tpg, true);
 
-	pr_debug("CORE[%s] - Removed Network Portal: %s:%hu,%hu on %s\n",
-		tpg->tpg_tiqn->tiqn, np->np_ip, np->np_port, tpg->tpgt,
+	pr_debug("CORE[%s] - Removed Network Portal: %pISc:%hu,%hu on %s\n",
+		tpg->tpg_tiqn->tiqn, &np->np_sockaddr, np->np_port, tpg->tpgt,
 		np->np_transport->name);
 
 	tpg_np->tpg_np = NULL;

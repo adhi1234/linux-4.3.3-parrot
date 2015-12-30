@@ -1297,11 +1297,8 @@ static int ttusb_dec_boot_dsp(struct ttusb_dec *dec)
 	dprintk("%s\n", __func__);
 
 	result = request_firmware(&fw_entry, dec->firmware_name, &dec->udev->dev);
-	if (result) {
-		printk(KERN_ERR "%s: Firmware (%s) unavailable.\n",
-		       __func__, dec->firmware_name);
+	if (result)
 		return result;
-	}
 
 	firmware = fw_entry->data;
 	firmware_size = fw_entry->size;
@@ -1431,8 +1428,8 @@ static int ttusb_dec_init_stb(struct ttusb_dec *dec)
 			       __func__, model);
 			return -ENOENT;
 		}
-			if (version >= 0x01770000)
-				dec->can_playback = 1;
+		if (version >= 0x01770000)
+			dec->can_playback = 1;
 	}
 	return 0;
 }

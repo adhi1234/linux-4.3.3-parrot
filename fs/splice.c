@@ -261,6 +261,7 @@ ssize_t splice_to_pipe(struct pipe_inode_info *pipe,
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(splice_to_pipe);
 
 void spd_release_page(struct splice_pipe_desc *spd, unsigned int i)
 {
@@ -359,7 +360,7 @@ __generic_file_splice_read(struct file *in, loff_t *ppos,
 				break;
 
 			error = add_to_page_cache_lru(page, mapping, index,
-						GFP_KERNEL);
+					GFP_KERNEL & mapping_gfp_mask(mapping));
 			if (unlikely(error)) {
 				page_cache_release(page);
 				if (error == -EEXIST)
@@ -1095,6 +1096,7 @@ ssize_t generic_splice_sendpage(struct pipe_inode_info *pipe, struct file *out,
 {
 	return splice_from_pipe(pipe, out, ppos, len, flags, pipe_to_sendpage);
 }
+EXPORT_SYMBOL(do_splice_from);
 
 EXPORT_SYMBOL(generic_splice_sendpage);
 
@@ -1114,7 +1116,7 @@ long do_splice_from(struct pipe_inode_info *pipe, struct file *out,
 
 	return splice_write(pipe, out, ppos, len, flags);
 }
-EXPORT_SYMBOL(do_splice_from);
+EXPORT_SYMBOL_GPL(do_splice_from);
 
 /*
  * Attempt to initiate a splice from a file to a pipe.
@@ -1141,7 +1143,7 @@ long do_splice_to(struct file *in, loff_t *ppos,
 
 	return splice_read(in, ppos, pipe, len, flags);
 }
-EXPORT_SYMBOL(do_splice_to);
+EXPORT_SYMBOL_GPL(do_splice_to);
 
 /**
  * splice_direct_to_actor - splices data directly between two non-pipes
@@ -1283,6 +1285,7 @@ static int direct_splice_actor(struct pipe_inode_info *pipe,
 	return do_splice_from(pipe, file, sd->opos, sd->total_len,
 			      sd->flags);
 }
+EXPORT_SYMBOL(do_splice_to);
 
 /**
  * do_splice_direct - splices data directly between two files

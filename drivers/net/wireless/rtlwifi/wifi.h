@@ -1665,6 +1665,7 @@ struct rtl_dm {
 	u8 last_dtp_lvl;
 	u8 thermalvalue_avg[AVG_THERMAL_NUM];
 	u8 thermalvalue_avg_index;
+	u8 tm_trigger;
 	bool done_txpower;
 	u8 dynamic_txhighpower_lvl;	/*Tx high power level */
 	u8 dm_flag;		/*Indicate each dynamic mechanism's status. */
@@ -2233,6 +2234,9 @@ struct rtl_mod_params {
 
 	/* default 0: 1 means disable */
 	bool disable_watchdog;
+
+	/* default 0: 1 means do not disable interrupts */
+	bool int_clear;
 };
 
 struct rtl_hal_usbint_cfg {

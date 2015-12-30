@@ -768,6 +768,28 @@ nfs_page_search_commits_for_head_request_locked(struct nfs_inode *nfsi,
 }
 
 /**
+ * nfs_request_add_commit_list_locked - add request to a commit list
+ * @req: pointer to a struct nfs_page
+ * @dst: commit list head
+ * @cinfo: holds list lock and accounting info
+ *
+ * This sets the PG_CLEAN bit, updates the cinfo count of
+ * number of outstanding requests requiring a commit as well as
+ * the MM page stats.
+ *
+ * The caller must hold the cinfo->lock, and the nfs_page lock.
+ */
+void
+nfs_request_add_commit_list_locked(struct nfs_page *req, struct list_head *dst,
+			    struct nfs_commit_info *cinfo)
+{
+	set_bit(PG_CLEAN, &req->wb_flags);
+	nfs_list_add_request(req, dst);
+	cinfo->mds->ncommit++;
+}
+EXPORT_SYMBOL_GPL(nfs_request_add_commit_list_locked);
+
+/**
  * nfs_request_add_commit_list - add request to a commit list
  * @req: pointer to a struct nfs_page
  * @dst: commit list head
@@ -784,13 +806,10 @@ void
 nfs_request_add_commit_list(struct nfs_page *req, struct list_head *dst,
 			    struct nfs_commit_info *cinfo)
 {
-	set_bit(PG_CLEAN, &(req)->wb_flags);
 	spin_lock(cinfo->lock);
-	nfs_list_add_request(req, dst);
-	cinfo->mds->ncommit++;
+	nfs_request_add_commit_list_locked(req, dst, cinfo);
 	spin_unlock(cinfo->lock);
-	if (!cinfo->dreq)
-		nfs_mark_page_unstable(req->wb_page);
+	nfs_mark_page_unstable(req->wb_page, cinfo);
 }
 EXPORT_SYMBOL_GPL(nfs_request_add_commit_list);
 
@@ -853,7 +872,8 @@ static void
 nfs_clear_page_commit(struct page *page)
 {
 	dec_zone_page_state(page, NR_UNSTABLE_NFS);
-	dec_bdi_stat(inode_to_bdi(page_file_mapping(page)->host), BDI_RECLAIMABLE);
+	dec_wb_stat(&inode_to_bdi(page_file_mapping(page)->host)->wb,
+		    WB_RECLAIMABLE);
 }
 
 /* Called holding inode (/cinfo) lock */
@@ -1203,7 +1223,7 @@ static int nfs_can_extend_write(struct file *file, struct page *page, struct ino
 		return 1;
 	if (!flctx || (list_empty_careful(&flctx->flc_flock) &&
 		       list_empty_careful(&flctx->flc_posix)))
-		return 0;
+		return 1;
 
 	/* Check to see if there are whole file write locks */
 	ret = 0;
@@ -1331,6 +1351,9 @@ void nfs_pageio_reset_write_mds(struct nfs_pageio_descriptor *pgio)
 {
 	struct nfs_pgio_mirror *mirror;
 
+	if (pgio->pg_ops && pgio->pg_ops->pg_cleanup)
+		pgio->pg_ops->pg_cleanup(pgio);
+
 	pgio->pg_ops = &nfs_pgio_rw_ops;
 
 	nfs_pageio_stop_mirroring(pgio);
@@ -1346,11 +1369,6 @@ void nfs_commit_prepare(struct rpc_task *task, void *calldata)
 	struct nfs_commit_data *data = calldata;
 
 	NFS_PROTO(data->inode)->commit_rpc_prepare(task, data);
-}
-
-static void nfs_writeback_release_common(struct nfs_pgio_header *hdr)
-{
-	/* do nothing! */
 }
 
 /*
@@ -1383,24 +1401,27 @@ static void nfs_writeback_check_extend(struct nfs_pgio_header *hdr,
 {
 	struct nfs_pgio_args *argp = &hdr->args;
 	struct nfs_pgio_res *resp = &hdr->res;
+	u64 size = argp->offset + resp->count;
 
 	if (!(fattr->valid & NFS_ATTR_FATTR_SIZE))
+		fattr->size = size;
+	if (nfs_size_to_loff_t(fattr->size) < i_size_read(hdr->inode)) {
+		fattr->valid &= ~NFS_ATTR_FATTR_SIZE;
 		return;
-	if (argp->offset + resp->count != fattr->size)
-		return;
-	if (nfs_size_to_loff_t(fattr->size) < i_size_read(hdr->inode))
+	}
+	if (size != fattr->size)
 		return;
 	/* Set attribute barrier */
 	nfs_fattr_set_barrier(fattr);
+	/* ...and update size */
+	fattr->valid |= NFS_ATTR_FATTR_SIZE;
 }
 
 void nfs_writeback_update_inode(struct nfs_pgio_header *hdr)
 {
-	struct nfs_fattr *fattr = hdr->res.fattr;
+	struct nfs_fattr *fattr = &hdr->fattr;
 	struct inode *inode = hdr->inode;
 
-	if (fattr == NULL)
-		return;
 	spin_lock(&inode->i_lock);
 	nfs_writeback_check_extend(hdr, fattr);
 	nfs_post_op_update_inode_force_wcc_locked(inode, fattr);
@@ -1556,7 +1577,7 @@ int nfs_initiate_commit(struct rpc_clnt *clnt, struct nfs_commit_data *data,
 	/* Set up the initial task struct.  */
 	nfs_ops->commit_setup(data, &msg);
 
-	dprintk("NFS: %5u initiated commit call\n", data->task.tk_pid);
+	dprintk("NFS: initiated commit call\n");
 
 	nfs4_state_protect(NFS_SERVER(data->inode)->nfs_client,
 		NFS_SP4_MACH_CRED_COMMIT, &task_setup_data.rpc_client, &msg);
@@ -2013,7 +2034,6 @@ static const struct nfs_rw_ops nfs_rw_write_ops = {
 	.rw_mode		= FMODE_WRITE,
 	.rw_alloc_header	= nfs_writehdr_alloc,
 	.rw_free_header		= nfs_writehdr_free,
-	.rw_release		= nfs_writeback_release_common,
 	.rw_done		= nfs_writeback_done,
 	.rw_result		= nfs_writeback_result,
 	.rw_initiate		= nfs_initiate_write,

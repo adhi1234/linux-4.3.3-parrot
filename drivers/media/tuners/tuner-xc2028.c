@@ -1094,7 +1094,7 @@ static int generic_set_freq(struct dvb_frontend *fe, u32 freq /* in HZ */,
 		 * Still need tests for XC3028L (firmware 3.2 or upper)
 		 * So, for now, let's just comment the per-firmware
 		 * version of this change. Reports with xc3028l working
-		 * with and without the lines bellow are welcome
+		 * with and without the lines below are welcome
 		 */
 
 		if (priv->firm_version < 0x0302) {
@@ -1373,7 +1373,6 @@ static void load_firmware_cb(const struct firmware *fw,
 
 	tuner_dbg("request_firmware_nowait(): %s\n", fw ? "OK" : "error");
 	if (!fw) {
-		tuner_err("Could not load firmware %s.\n", priv->fname);
 		priv->state = XC2028_NODEV;
 		return;
 	}

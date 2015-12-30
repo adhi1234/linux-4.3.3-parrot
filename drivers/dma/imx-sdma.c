@@ -420,7 +420,7 @@ static struct sdma_driver_data sdma_imx6q = {
 	.script_addrs = &sdma_script_imx6q,
 };
 
-static struct platform_device_id sdma_devtypes[] = {
+static const struct platform_device_id sdma_devtypes[] = {
 	{
 		.name = "imx25-sdma",
 		.driver_data = (unsigned long)&sdma_imx25,
@@ -1285,11 +1285,8 @@ static void sdma_load_firmware(const struct firmware *fw, void *context)
 	const struct sdma_script_start_addrs *addr;
 	unsigned short *ram_code;
 
-	if (!fw) {
-		dev_info(sdma->dev, "external firmware not found, using ROM firmware\n");
-		/* In this case we just use the ROM firmware. */
+	if (!fw)
 		return;
-	}
 
 	if (fw->size < sizeof(*header))
 		goto err_firmware;

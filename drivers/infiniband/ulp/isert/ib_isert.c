@@ -80,7 +80,9 @@ isert_qp_event_callback(struct ib_event *e, void *context)
 {
 	struct isert_conn *isert_conn = context;
 
-	isert_err("conn %p event: %d\n", isert_conn, e->event);
+	isert_err("%s (%d): conn %p\n",
+		  ib_event_msg(e->event), e->event, isert_conn);
+
 	switch (e->event) {
 	case IB_EVENT_COMM_EST:
 		rdma_notify(isert_conn->cm_id, IB_EVENT_COMM_EST);
@@ -318,15 +320,18 @@ isert_alloc_comps(struct isert_device *device,
 	max_cqe = min(ISER_MAX_CQ_LEN, attr->max_cqe);
 
 	for (i = 0; i < device->comps_used; i++) {
+		struct ib_cq_init_attr cq_attr = {};
 		struct isert_comp *comp = &device->comps[i];
 
 		comp->device = device;
 		INIT_WORK(&comp->work, isert_cq_work);
+		cq_attr.cqe = max_cqe;
+		cq_attr.comp_vector = i;
 		comp->cq = ib_create_cq(device->ib_device,
 					isert_cq_callback,
 					isert_cq_event_callback,
 					(void *)comp,
-					max_cqe, i);
+					&cq_attr);
 		if (IS_ERR(comp->cq)) {
 			isert_err("Unable to allocate cq\n");
 			ret = PTR_ERR(comp->cq);
@@ -770,6 +775,17 @@ isert_connect_request(struct rdma_cm_id *cma_id, struct rdma_cm_event *event)
 	ret = isert_rdma_post_recvl(isert_conn);
 	if (ret)
 		goto out_conn_dev;
+	/*
+	 * Obtain the second reference now before isert_rdma_accept() to
+	 * ensure that any initiator generated REJECT CM event that occurs
+	 * asynchronously won't drop the last reference until the error path
+	 * in iscsi_target_login_sess_out() does it's ->iscsit_free_conn() ->
+	 * isert_free_conn() -> isert_put_conn() -> kref_put().
+	 */
+	if (!kref_get_unless_zero(&isert_conn->kref)) {
+		isert_warn("conn %p connect_release is running\n", isert_conn);
+		goto out_conn_dev;
+	}
 
 	ret = isert_rdma_accept(isert_conn);
 	if (ret)
@@ -830,11 +846,6 @@ isert_connected_handler(struct rdma_cm_id *cma_id)
 	struct isert_conn *isert_conn = cma_id->qp->qp_context;
 
 	isert_info("conn %p\n", isert_conn);
-
-	if (!kref_get_unless_zero(&isert_conn->kref)) {
-		isert_warn("conn %p connect_release is running\n", isert_conn);
-		return;
-	}
 
 	mutex_lock(&isert_conn->mutex);
 	if (isert_conn->state != ISER_CONN_FULL_FEATURE)
@@ -900,7 +911,8 @@ static int
 isert_np_cma_handler(struct isert_np *isert_np,
 		     enum rdma_cm_event_type event)
 {
-	isert_dbg("isert np %p, handling event %d\n", isert_np, event);
+	isert_dbg("%s (%d): isert np %p\n",
+		  rdma_event_msg(event), event, isert_np);
 
 	switch (event) {
 	case RDMA_CM_EVENT_DEVICE_REMOVAL:
@@ -974,7 +986,8 @@ isert_cma_handler(struct rdma_cm_id *cma_id, struct rdma_cm_event *event)
 {
 	int ret = 0;
 
-	isert_info("event %d status %d id %p np %p\n", event->event,
+	isert_info("%s (%d): status %d id %p np %p\n",
+		   rdma_event_msg(event->event), event->event,
 		   event->status, cma_id, cma_id->context);
 
 	switch (event->event) {
@@ -1349,7 +1362,7 @@ sequence_cmd:
 	if (!rc && dump_payload == false && unsol_data)
 		iscsit_set_unsoliticed_dataout(cmd);
 	else if (dump_payload && imm_data)
-		target_put_sess_cmd(conn->sess->se_sess, &cmd->se_cmd);
+		target_put_sess_cmd(&cmd->se_cmd);
 
 	return 0;
 }
@@ -1774,7 +1787,7 @@ isert_put_cmd(struct isert_cmd *isert_cmd, bool comp_err)
 			    cmd->se_cmd.t_state == TRANSPORT_WRITE_PENDING) {
 				struct se_cmd *se_cmd = &cmd->se_cmd;
 
-				target_put_sess_cmd(se_cmd->se_sess, se_cmd);
+				target_put_sess_cmd(se_cmd);
 			}
 		}
 
@@ -1947,7 +1960,7 @@ isert_completion_rdma_read(struct iser_tx_desc *tx_desc,
 	spin_unlock_bh(&cmd->istate_lock);
 
 	if (ret) {
-		target_put_sess_cmd(se_cmd->se_sess, se_cmd);
+		target_put_sess_cmd(se_cmd);
 		transport_send_check_condition_and_sense(se_cmd,
 							 se_cmd->pi_err, 0);
 	} else {
@@ -2108,10 +2121,13 @@ isert_handle_wc(struct ib_wc *wc)
 		}
 	} else {
 		if (wc->status != IB_WC_WR_FLUSH_ERR)
-			isert_err("wr id %llx status %d vend_err %x\n",
-				  wc->wr_id, wc->status, wc->vendor_err);
+			isert_err("%s (%d): wr id %llx vend_err %x\n",
+				  ib_wc_status_msg(wc->status), wc->status,
+				  wc->wr_id, wc->vendor_err);
 		else
-			isert_dbg("flush error: wr id %llx\n", wc->wr_id);
+			isert_dbg("%s (%d): wr id %llx\n",
+				  ib_wc_status_msg(wc->status), wc->status,
+				  wc->wr_id);
 
 		if (wc->wr_id != ISER_FASTREG_LI_WRID)
 			isert_cq_comp_err(isert_conn, wc);
@@ -2996,9 +3012,16 @@ isert_get_dataout(struct iscsi_conn *conn, struct iscsi_cmd *cmd, bool recovery)
 static int
 isert_immediate_queue(struct iscsi_conn *conn, struct iscsi_cmd *cmd, int state)
 {
-	int ret;
+	struct isert_cmd *isert_cmd = iscsit_priv_cmd(cmd);
+	int ret = 0;
 
 	switch (state) {
+	case ISTATE_REMOVE:
+		spin_lock_bh(&conn->cmd_lock);
+		list_del_init(&cmd->i_conn_node);
+		spin_unlock_bh(&conn->cmd_lock);
+		isert_put_cmd(isert_cmd, true);
+		break;
 	case ISTATE_SEND_NOPIN_WANT_RESPONSE:
 		ret = isert_put_nopin(cmd, conn, false);
 		break;
@@ -3363,6 +3386,41 @@ isert_wait4flush(struct isert_conn *isert_conn)
 	wait_for_completion(&isert_conn->wait_comp_err);
 }
 
+/**
+ * isert_put_unsol_pending_cmds() - Drop commands waiting for
+ *     unsolicitate dataout
+ * @conn:    iscsi connection
+ *
+ * We might still have commands that are waiting for unsolicited
+ * dataouts messages. We must put the extra reference on those
+ * before blocking on the target_wait_for_session_cmds
+ */
+static void
+isert_put_unsol_pending_cmds(struct iscsi_conn *conn)
+{
+	struct iscsi_cmd *cmd, *tmp;
+	static LIST_HEAD(drop_cmd_list);
+
+	spin_lock_bh(&conn->cmd_lock);
+	list_for_each_entry_safe(cmd, tmp, &conn->conn_cmd_list, i_conn_node) {
+		if ((cmd->cmd_flags & ICF_NON_IMMEDIATE_UNSOLICITED_DATA) &&
+		    (cmd->write_data_done < conn->sess->sess_ops->FirstBurstLength) &&
+		    (cmd->write_data_done < cmd->se_cmd.data_length))
+			list_move_tail(&cmd->i_conn_node, &drop_cmd_list);
+	}
+	spin_unlock_bh(&conn->cmd_lock);
+
+	list_for_each_entry_safe(cmd, tmp, &drop_cmd_list, i_conn_node) {
+		list_del_init(&cmd->i_conn_node);
+		if (cmd->i_state != ISTATE_REMOVE) {
+			struct isert_cmd *isert_cmd = iscsit_priv_cmd(cmd);
+
+			isert_info("conn %p dropping cmd %p\n", conn, cmd);
+			isert_put_cmd(isert_cmd, true);
+		}
+	}
+}
+
 static void isert_wait_conn(struct iscsi_conn *conn)
 {
 	struct isert_conn *isert_conn = conn->context;
@@ -3381,8 +3439,9 @@ static void isert_wait_conn(struct iscsi_conn *conn)
 	isert_conn_terminate(isert_conn);
 	mutex_unlock(&isert_conn->mutex);
 
-	isert_wait4cmds(conn);
 	isert_wait4flush(isert_conn);
+	isert_put_unsol_pending_cmds(conn);
+	isert_wait4cmds(conn);
 	isert_wait4logout(isert_conn);
 
 	queue_work(isert_release_wq, &isert_conn->release_work);

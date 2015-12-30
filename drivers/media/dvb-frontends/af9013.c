@@ -39,7 +39,7 @@ struct af9013_state {
 	u32 ucblocks;
 	u16 snr;
 	u32 bandwidth_hz;
-	fe_status_t fe_status;
+	enum fe_status fe_status;
 	unsigned long set_frontend_jiffies;
 	unsigned long read_status_jiffies;
 	bool first_tune;
@@ -983,7 +983,7 @@ err:
 	return ret;
 }
 
-static int af9013_read_status(struct dvb_frontend *fe, fe_status_t *status)
+static int af9013_read_status(struct dvb_frontend *fe, enum fe_status *status)
 {
 	struct af9013_state *state = fe->demodulator_priv;
 	int ret;
@@ -1376,16 +1376,8 @@ static int af9013_download_firmware(struct af9013_state *state)
 
 	/* request the firmware, this will block and timeout */
 	ret = request_firmware(&fw, fw_file, state->i2c->dev.parent);
-	if (ret) {
-		dev_info(&state->i2c->dev, "%s: did not find the firmware " \
-			"file. (%s) Please see linux/Documentation/dvb/ for " \
-			"more details on firmware-problems. (%d)\n",
-			KBUILD_MODNAME, fw_file, ret);
+	if (ret)
 		goto err;
-	}
-
-	dev_info(&state->i2c->dev, "%s: downloading firmware from file '%s'\n",
-			KBUILD_MODNAME, fw_file);
 
 	/* calc checksum */
 	for (i = 0; i < fw->size; i++)

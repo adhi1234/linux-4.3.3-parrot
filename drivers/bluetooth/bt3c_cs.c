@@ -202,9 +202,8 @@ static void bt3c_write_wakeup(struct bt3c_info *info)
 		/* Send frame */
 		len = bt3c_write(iobase, 256, skb->data, skb->len);
 
-		if (len != skb->len) {
+		if (len != skb->len)
 			BT_ERR("Very strange");
-		}
 
 		kfree_skb(skb);
 
@@ -568,10 +567,8 @@ static int bt3c_open(struct bt3c_info *info)
 
 	/* Load firmware */
 	err = request_firmware(&firmware, "BT3CPCC.bin", &info->p_dev->dev);
-	if (err < 0) {
-		BT_ERR("Firmware request failed");
+	if (err)
 		goto error;
-	}
 
 	err = bt3c_load_firmware(info, firmware->data, firmware->size);
 

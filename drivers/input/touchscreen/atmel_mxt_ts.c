@@ -726,15 +726,15 @@ static void mxt_input_button(struct mxt_data *data, u8 *message)
 {
 	struct input_dev *input = data->input_dev;
 	const struct mxt_platform_data *pdata = data->pdata;
-	bool button;
 	int i;
 
-	/* Active-low switch */
 	for (i = 0; i < pdata->t19_num_keys; i++) {
 		if (pdata->t19_keymap[i] == KEY_RESERVED)
 			continue;
-		button = !(message[1] & (1 << i));
-		input_report_key(input, pdata->t19_keymap[i], button);
+
+		/* Active-low switch */
+		input_report_key(input, pdata->t19_keymap[i],
+				 !(message[1] & BIT(i)));
 	}
 }
 
@@ -2195,10 +2195,8 @@ static int mxt_load_fw(struct device *dev, const char *fn)
 	int ret;
 
 	ret = request_firmware(&fw, fn, dev);
-	if (ret) {
-		dev_err(dev, "Unable to open firmware %s\n", fn);
+	if (ret)
 		return ret;
-	}
 
 	/* Check for incorrect enc file */
 	ret = mxt_check_firmware_format(dev, fw);

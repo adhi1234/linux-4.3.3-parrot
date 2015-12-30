@@ -1061,13 +1061,24 @@ static ssize_t usbvision_read(struct file *file, char __user *buf,
 	       __func__,
 	       (unsigned long)count, frame->bytes_read);
 
-	/* For now, forget the frame if it has not been read in one shot. */
-/*	if (frame->bytes_read >= frame->scanlength) {*/ /* All data has been read */
+#if 1
+	/*
+	 * FIXME:
+	 * For now, forget the frame if it has not been read in one shot.
+	 */
+	frame->bytes_read = 0;
+
+	/* Mark it as available to be used again. */
+	frame->grabstate = frame_state_unused;
+#else
+	if (frame->bytes_read >= frame->scanlength) {
+		/* All data has been read */
 		frame->bytes_read = 0;
 
 		/* Mark it as available to be used again. */
 		frame->grabstate = frame_state_unused;
-/*	} */
+	}
+#endif
 
 	return count;
 }
@@ -1522,11 +1533,32 @@ static int usbvision_probe(struct usb_interface *intf,
 	printk(KERN_INFO "%s: %s found\n", __func__,
 				usbvision_device_data[model].model_string);
 
+	/*
+	 * this is a security check.
+	 * an exploit using an incorrect bInterfaceNumber is known
+	 */
+	if (ifnum >= USB_MAXINTERFACES || !dev->actconfig->interface[ifnum])
+		return -ENODEV;
+
 	if (usbvision_device_data[model].interface >= 0)
 		interface = &dev->actconfig->interface[usbvision_device_data[model].interface]->altsetting[0];
-	else
+	else if (ifnum < dev->actconfig->desc.bNumInterfaces)
 		interface = &dev->actconfig->interface[ifnum]->altsetting[0];
+	else {
+		dev_err(&intf->dev, "interface %d is invalid, max is %d\n",
+		    ifnum, dev->actconfig->desc.bNumInterfaces - 1);
+		ret = -ENODEV;
+		goto err_usb;
+	}
+
+	if (interface->desc.bNumEndpoints < 2) {
+		dev_err(&intf->dev, "interface %d has %d endpoints, but must"
+		    " have minimum 2\n", ifnum, interface->desc.bNumEndpoints);
+		ret = -ENODEV;
+		goto err_usb;
+	}
 	endpoint = &interface->endpoint[1].desc;
+
 	if (!usb_endpoint_xfer_isoc(endpoint)) {
 		dev_err(&intf->dev, "%s: interface %d. has non-ISO endpoint!\n",
 		    __func__, ifnum);

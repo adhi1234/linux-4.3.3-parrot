@@ -981,29 +981,15 @@ static int asd_process_ctrla_phy_settings(struct asd_ha_struct *asd_ha,
 static int asd_process_ctrl_a_user(struct asd_ha_struct *asd_ha,
 				   struct asd_flash_dir *flash_dir)
 {
-	int err, i;
+	int err;
 	u32 offs, size;
 	struct asd_ll_el *el;
 	struct asd_ctrla_phy_settings *ps;
-	struct asd_ctrla_phy_settings dflt_ps;
 
 	err = asd_find_flash_de(flash_dir, FLASH_DE_CTRL_A_USER, &offs, &size);
 	if (err) {
 		ASD_DPRINTK("couldn't find CTRL-A user settings section\n");
-		ASD_DPRINTK("Creating default CTRL-A user settings section\n");
-
-		dflt_ps.id0 = 'h';
-		dflt_ps.num_phys = 8;
-		for (i =0; i < ASD_MAX_PHYS; i++) {
-			memcpy(dflt_ps.phy_ent[i].sas_addr,
-			       asd_ha->hw_prof.sas_addr, SAS_ADDR_SIZE);
-			dflt_ps.phy_ent[i].sas_link_rates = 0x98;
-			dflt_ps.phy_ent[i].flags = 0x0;
-			dflt_ps.phy_ent[i].sata_link_rates = 0x0;
-		}
-
-		size = sizeof(struct asd_ctrla_phy_settings);
-		ps = &dflt_ps;
+		return 0;
 	}
 
 	if (size == 0)

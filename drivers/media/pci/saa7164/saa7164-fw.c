@@ -1,7 +1,7 @@
 /*
  *  Driver for the NXP SAA7164 PCIe bridge
  *
- *  Copyright (c) 2010 Steven Toth <stoth@kernellabs.com>
+ *  Copyright (c) 2010-2015 Steven Toth <stoth@kernellabs.com>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -420,11 +420,8 @@ int saa7164_downloadfirmware(struct saa7164_dev *dev)
 			__func__, fwname);
 
 		ret = request_firmware(&fw, fwname, &dev->pci->dev);
-		if (ret) {
-			printk(KERN_ERR "%s() Upload failed. "
-				"(file not found?)\n", __func__);
+		if (ret)
 			return -ENOMEM;
-		}
 
 		printk(KERN_INFO "%s() firmware read %Zu bytes.\n",
 			__func__, fw->size);

@@ -308,11 +308,8 @@ static long download_firmware(struct kim_data_s *kim_gdata)
 	    request_firmware(&kim_gdata->fw_entry, bts_scr_name,
 			     &kim_gdata->kim_pdev->dev);
 	if (unlikely((err != 0) || (kim_gdata->fw_entry->data == NULL) ||
-		     (kim_gdata->fw_entry->size == 0))) {
-		pr_err(" request_firmware failed(errno %ld) for %s", err,
-			   bts_scr_name);
+		     (kim_gdata->fw_entry->size == 0)))
 		return -EINVAL;
-	}
 	ptr = (void *)kim_gdata->fw_entry->data;
 	len = kim_gdata->fw_entry->size;
 	/* bts_header to remove out magic number and
@@ -752,9 +749,8 @@ static struct ti_st_plat_data *get_platform_data(struct device *dev)
 	int len;
 
 	dt_pdata = kzalloc(sizeof(*dt_pdata), GFP_KERNEL);
-
 	if (!dt_pdata)
-		pr_err("Can't allocate device_tree platform data\n");
+		return NULL;
 
 	dt_property = of_get_property(np, "dev_name", &len);
 	if (dt_property)
