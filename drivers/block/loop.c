@@ -578,24 +578,6 @@ struct file *loop_backing_file(struct super_block *sb)
 }
 EXPORT_SYMBOL_GPL(loop_backing_file);
 
-/*
- * for AUFS
- * no get/put for file.
- */
-struct file *loop_backing_file(struct super_block *sb)
-{
-	struct file *ret;
-	struct loop_device *l;
-
-	ret = NULL;
-	if (MAJOR(sb->s_dev) == LOOP_MAJOR) {
-		l = sb->s_bdev->bd_disk->private_data;
-		ret = l->lo_backing_file;
-	}
-	return ret;
-}
-EXPORT_SYMBOL(loop_backing_file);
-
 /* loop sysfs attributes */
 
 static ssize_t loop_attr_show(struct device *dev, char *page,
@@ -711,7 +693,7 @@ static void loop_config_discard(struct loop_device *lo)
 	    lo->lo_encrypt_key_size) {
 		q->limits.discard_granularity = 0;
 		q->limits.discard_alignment = 0;
-		q->limits.max_discard_sectors = 0;
+		blk_queue_max_discard_sectors(q, 0);
 		q->limits.discard_zeroes_data = 0;
 		queue_flag_clear_unlocked(QUEUE_FLAG_DISCARD, q);
 		return;
@@ -719,7 +701,7 @@ static void loop_config_discard(struct loop_device *lo)
 
 	q->limits.discard_granularity = inode->i_sb->s_blocksize;
 	q->limits.discard_alignment = 0;
-	q->limits.max_discard_sectors = UINT_MAX >> 9;
+	blk_queue_max_discard_sectors(q, UINT_MAX >> 9);
 	q->limits.discard_zeroes_data = 1;
 	queue_flag_set_unlocked(QUEUE_FLAG_DISCARD, q);
 }
@@ -1522,17 +1504,16 @@ static void loop_handle_cmd(struct loop_cmd *cmd)
 {
 	const bool write = cmd->rq->cmd_flags & REQ_WRITE;
 	struct loop_device *lo = cmd->rq->q->queuedata;
-	int ret = -EIO;
+	int ret = 0;
 
-	if (write && (lo->lo_flags & LO_FLAGS_READ_ONLY))
+	if (write && (lo->lo_flags & LO_FLAGS_READ_ONLY)) {
+		ret = -EIO;
 		goto failed;
+	}
 
 	ret = do_req_filebacked(lo, cmd->rq);
-
  failed:
-	if (ret)
-		cmd->rq->errors = -EIO;
-	blk_mq_complete_request(cmd->rq);
+	blk_mq_complete_request(cmd->rq, ret ? -EIO : 0);
 }
 
 static void loop_queue_write_work(struct work_struct *work)

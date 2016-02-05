@@ -554,6 +554,7 @@ static void unix_release_sock(struct sock *sk, int embrion)
 		if (state == TCP_LISTEN)
 			unix_release_sock(skb->sk, 1);
 		/* passed fds are erased in the kfree_skb hook	      */
+		UNIXCB(skb).consumed = skb->len;
 		kfree_skb(skb);
 	}
 
@@ -1497,6 +1498,21 @@ static void unix_destruct_scm(struct sk_buff *skb)
 	sock_wfree(skb);
 }
 
+/*
+ * The "user->unix_inflight" variable is protected by the garbage
+ * collection lock, and we just read it locklessly here. If you go
+ * over the limit, there might be a tiny race in actually noticing
+ * it across threads. Tough.
+ */
+static inline bool too_many_unix_fds(struct task_struct *p)
+{
+	struct user_struct *user = current_user();
+
+	if (unlikely(user->unix_inflight > task_rlimit(p, RLIMIT_NOFILE)))
+		return !capable(CAP_SYS_RESOURCE) && !capable(CAP_SYS_ADMIN);
+	return false;
+}
+
 #define MAX_RECURSION_LEVEL 4
 
 static int unix_attach_fds(struct scm_cookie *scm, struct sk_buff *skb)
@@ -1504,6 +1520,9 @@ static int unix_attach_fds(struct scm_cookie *scm, struct sk_buff *skb)
 	int i;
 	unsigned char max_level = 0;
 	int unix_sock_count = 0;
+
+	if (too_many_unix_fds(current))
+		return -ETOOMANYREFS;
 
 	for (i = scm->fp->count - 1; i >= 0; i--) {
 		struct sock *sk = unix_get_socket(scm->fp->fp[i]);
@@ -1526,10 +1545,8 @@ static int unix_attach_fds(struct scm_cookie *scm, struct sk_buff *skb)
 	if (!UNIXCB(skb).fp)
 		return -ENOMEM;
 
-	if (unix_sock_count) {
-		for (i = scm->fp->count - 1; i >= 0; i--)
-			unix_inflight(scm->fp->fp[i]);
-	}
+	for (i = scm->fp->count - 1; i >= 0; i--)
+		unix_inflight(scm->fp->fp[i]);
 	return max_level;
 }
 
@@ -1549,6 +1566,14 @@ static int unix_scm_to_skb(struct scm_cookie *scm, struct sk_buff *skb, bool sen
 	return err;
 }
 
+static bool unix_passcred_enabled(const struct socket *sock,
+				  const struct sock *other)
+{
+	return test_bit(SOCK_PASSCRED, &sock->flags) ||
+	       !other->sk_socket ||
+	       test_bit(SOCK_PASSCRED, &other->sk_socket->flags);
+}
+
 /*
  * Some apps rely on write() giving SCM_CREDENTIALS
  * We include credentials if source or destination socket
@@ -1559,12 +1584,39 @@ static void maybe_add_creds(struct sk_buff *skb, const struct socket *sock,
 {
 	if (UNIXCB(skb).pid)
 		return;
-	if (test_bit(SOCK_PASSCRED, &sock->flags) ||
-	    !other->sk_socket ||
-	    test_bit(SOCK_PASSCRED, &other->sk_socket->flags)) {
+	if (unix_passcred_enabled(sock, other)) {
 		UNIXCB(skb).pid  = get_pid(task_tgid(current));
 		current_uid_gid(&UNIXCB(skb).uid, &UNIXCB(skb).gid);
 	}
+}
+
+static int maybe_init_creds(struct scm_cookie *scm,
+			    struct socket *socket,
+			    const struct sock *other)
+{
+	int err;
+	struct msghdr msg = { .msg_controllen = 0 };
+
+	err = scm_send(socket, &msg, scm, false);
+	if (err)
+		return err;
+
+	if (unix_passcred_enabled(socket, other)) {
+		scm->pid = get_pid(task_tgid(current));
+		current_uid_gid(&scm->creds.uid, &scm->creds.gid);
+	}
+	return err;
+}
+
+static bool unix_skb_scm_eq(struct sk_buff *skb,
+			    struct scm_cookie *scm)
+{
+	const struct unix_skb_parms *u = &UNIXCB(skb);
+
+	return u->pid == scm->pid &&
+	       uid_eq(u->uid, scm->creds.uid) &&
+	       gid_eq(u->gid, scm->creds.gid) &&
+	       unix_secdata_eq(scm, skb);
 }
 
 /*
@@ -1882,8 +1934,10 @@ out_err:
 static ssize_t unix_stream_sendpage(struct socket *socket, struct page *page,
 				    int offset, size_t size, int flags)
 {
-	int err = 0;
-	bool send_sigpipe = true;
+	int err;
+	bool send_sigpipe = false;
+	bool init_scm = true;
+	struct scm_cookie scm;
 	struct sock *other, *sk = socket->sk;
 	struct sk_buff *skb, *newskb = NULL, *tail = NULL;
 
@@ -1901,7 +1955,7 @@ alloc_skb:
 		newskb = sock_alloc_send_pskb(sk, 0, 0, flags & MSG_DONTWAIT,
 					      &err, 0);
 		if (!newskb)
-			return err;
+			goto err;
 	}
 
 	/* we must acquire readlock as we modify already present
@@ -1910,12 +1964,12 @@ alloc_skb:
 	err = mutex_lock_interruptible(&unix_sk(other)->readlock);
 	if (err) {
 		err = flags & MSG_DONTWAIT ? -EAGAIN : -ERESTARTSYS;
-		send_sigpipe = false;
 		goto err;
 	}
 
 	if (sk->sk_shutdown & SEND_SHUTDOWN) {
 		err = -EPIPE;
+		send_sigpipe = true;
 		goto err_unlock;
 	}
 
@@ -1924,23 +1978,34 @@ alloc_skb:
 	if (sock_flag(other, SOCK_DEAD) ||
 	    other->sk_shutdown & RCV_SHUTDOWN) {
 		err = -EPIPE;
+		send_sigpipe = true;
 		goto err_state_unlock;
+	}
+
+	if (init_scm) {
+		err = maybe_init_creds(&scm, socket, other);
+		if (err)
+			goto err_state_unlock;
+		init_scm = false;
 	}
 
 	skb = skb_peek_tail(&other->sk_receive_queue);
 	if (tail && tail == skb) {
 		skb = newskb;
-	} else if (!skb) {
-		if (newskb)
+	} else if (!skb || !unix_skb_scm_eq(skb, &scm)) {
+		if (newskb) {
 			skb = newskb;
-		else
+		} else {
+			tail = skb;
 			goto alloc_skb;
+		}
 	} else if (newskb) {
 		/* this is fast path, we don't necessarily need to
 		 * call to kfree_skb even though with newskb == NULL
 		 * this - does no harm
 		 */
 		consume_skb(newskb);
+		newskb = NULL;
 	}
 
 	if (skb_append_pagefrags(skb, page, offset, size)) {
@@ -1953,14 +2018,20 @@ alloc_skb:
 	skb->truesize += size;
 	atomic_add(size, &sk->sk_wmem_alloc);
 
-	if (newskb)
+	if (newskb) {
+		err = unix_scm_to_skb(&scm, skb, false);
+		if (err)
+			goto err_state_unlock;
+		spin_lock(&other->sk_receive_queue.lock);
 		__skb_queue_tail(&other->sk_receive_queue, newskb);
+		spin_unlock(&other->sk_receive_queue.lock);
+	}
 
 	unix_state_unlock(other);
 	mutex_unlock(&unix_sk(other)->readlock);
 
 	other->sk_data_ready(other);
-
+	scm_destroy(&scm);
 	return size;
 
 err_state_unlock:
@@ -1971,6 +2042,8 @@ err:
 	kfree_skb(newskb);
 	if (send_sigpipe && !(flags & MSG_NOSIGNAL))
 		send_sig(SIGPIPE, current, 0);
+	if (!init_scm)
+		scm_destroy(&scm);
 	return err;
 }
 
@@ -2214,6 +2287,7 @@ static int unix_stream_read_generic(struct unix_stream_read_state *state)
 
 	do {
 		int chunk;
+		bool drop_skb;
 		struct sk_buff *skb, *last;
 
 		unix_state_lock(sk);
@@ -2273,10 +2347,7 @@ unlock:
 
 		if (check_creds) {
 			/* Never glue messages from different writers */
-			if ((UNIXCB(skb).pid  != scm.pid) ||
-			    !uid_eq(UNIXCB(skb).uid, scm.creds.uid) ||
-			    !gid_eq(UNIXCB(skb).gid, scm.creds.gid) ||
-			    !unix_secdata_eq(&scm, skb))
+			if (!unix_skb_scm_eq(skb, &scm))
 				break;
 		} else if (test_bit(SOCK_PASSCRED, &sock->flags)) {
 			/* Copy credentials */
@@ -2294,7 +2365,11 @@ unlock:
 		}
 
 		chunk = min_t(unsigned int, unix_skb_len(skb) - skip, size);
+		skb_get(skb);
 		chunk = state->recv_actor(skb, skip, chunk, state);
+		drop_skb = !unix_skb_len(skb);
+		/* skb is only safe to use if !drop_skb */
+		consume_skb(skb);
 		if (chunk < 0) {
 			if (copied == 0)
 				copied = -EFAULT;
@@ -2302,6 +2377,18 @@ unlock:
 		}
 		copied += chunk;
 		size -= chunk;
+
+		if (drop_skb) {
+			/* the skb was touched by a concurrent reader;
+			 * we should not expect anything from this skb
+			 * anymore and assume it invalid - we can be
+			 * sure it was dropped from the socket queue
+			 *
+			 * let's report a short read
+			 */
+			err = 0;
+			break;
+		}
 
 		/* Mark read part of skb as used */
 		if (!(flags & MSG_PEEK)) {

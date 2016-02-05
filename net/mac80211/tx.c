@@ -607,7 +607,6 @@ ieee80211_tx_h_select_key(struct ieee80211_tx_data *tx)
 	if (tx->key) {
 		bool skip_hw = false;
 
-		tx->key->tx_rx_count++;
 		/* TODO: add threshold stuff again */
 
 		switch (tx->key->conf.cipher) {
@@ -687,7 +686,8 @@ ieee80211_tx_h_rate_ctrl(struct ieee80211_tx_data *tx)
 
 	txrc.bss = (tx->sdata->vif.type == NL80211_IFTYPE_AP ||
 		    tx->sdata->vif.type == NL80211_IFTYPE_MESH_POINT ||
-		    tx->sdata->vif.type == NL80211_IFTYPE_ADHOC);
+		    tx->sdata->vif.type == NL80211_IFTYPE_ADHOC ||
+		    tx->sdata->vif.type == NL80211_IFTYPE_OCB);
 
 	/* set up RTS protection if desired */
 	if (len > tx->local->hw.wiphy->rts_threshold) {
@@ -795,11 +795,19 @@ ieee80211_tx_h_sequence(struct ieee80211_tx_data *tx)
 
 	/*
 	 * Packet injection may want to control the sequence
-	 * number, if we have no matching interface then we
-	 * neither assign one ourselves nor ask the driver to.
+	 * number, so if an injected packet is found, skip
+	 * renumbering it. Also make the packet NO_ACK to avoid
+	 * excessive retries (ACKing and retrying should be
+	 * handled by the injecting application).
+	 * FIXME This may break hostapd and some other injectors.
+	 * This should be done using a radiotap flag.
 	 */
-	if (unlikely(info->control.vif->type == NL80211_IFTYPE_MONITOR))
+	if (unlikely((info->flags & IEEE80211_TX_CTL_INJECTED) &&
+	   !(tx->sdata->u.mntr_flags & MONITOR_FLAG_COOK_FRAMES))) {
+		if (!ieee80211_has_morefrags(hdr->frame_control))
+			info->flags |= IEEE80211_TX_CTL_NO_ACK;
 		return TX_CONTINUE;
+	}
 
 	if (unlikely(ieee80211_is_ctl(hdr->frame_control)))
 		return TX_CONTINUE;
@@ -1218,8 +1226,10 @@ ieee80211_tx_prepare(struct ieee80211_sub_if_data *sdata,
 
 	if (!tx->sta)
 		info->flags |= IEEE80211_TX_CTL_CLEAR_PS_FILT;
-	else if (test_and_clear_sta_flag(tx->sta, WLAN_STA_CLEAR_PS_FILT))
+	else if (test_and_clear_sta_flag(tx->sta, WLAN_STA_CLEAR_PS_FILT)) {
 		info->flags |= IEEE80211_TX_CTL_CLEAR_PS_FILT;
+		ieee80211_check_fast_xmit(tx->sta);
+	}
 
 	info->flags |= IEEE80211_TX_CTL_FIRST_FRAGMENT;
 
@@ -1659,7 +1669,10 @@ void ieee80211_xmit(struct ieee80211_sub_if_data *sdata,
 		}
 	}
 
-	ieee80211_set_qos_hdr(sdata, skb);
+        // Don't overwrite QoS header in monitor mode
+        if (likely(info->control.vif->type != NL80211_IFTYPE_MONITOR)) {
+            ieee80211_set_qos_hdr(sdata, skb);
+        }
 	ieee80211_tx(sdata, sta, skb, false);
 }
 
@@ -2451,7 +2464,8 @@ void ieee80211_check_fast_xmit(struct sta_info *sta)
 
 	if (test_sta_flag(sta, WLAN_STA_PS_STA) ||
 	    test_sta_flag(sta, WLAN_STA_PS_DRIVER) ||
-	    test_sta_flag(sta, WLAN_STA_PS_DELIVER))
+	    test_sta_flag(sta, WLAN_STA_PS_DELIVER) ||
+	    test_sta_flag(sta, WLAN_STA_CLEAR_PS_FILT))
 		goto out;
 
 	if (sdata->noack_map)
@@ -2774,7 +2788,11 @@ static bool ieee80211_xmit_fast(struct ieee80211_sub_if_data *sdata,
 		sdata->sequence_number += 0x10;
 	}
 
-	sta->tx_msdu[tid]++;
+	if (skb_shinfo(skb)->gso_size)
+		sta->tx_msdu[tid] +=
+			DIV_ROUND_UP(skb->len, skb_shinfo(skb)->gso_size);
+	else
+		sta->tx_msdu[tid]++;
 
 	info->hw_queue = sdata->vif.hw_queue[skb_get_queue_mapping(skb)];
 
@@ -3210,6 +3228,16 @@ static void ieee80211_set_csa(struct ieee80211_sub_if_data *sdata,
 	rcu_read_unlock();
 }
 
+static u8 __ieee80211_csa_update_counter(struct beacon_data *beacon)
+{
+	beacon->csa_current_counter--;
+
+	/* the counter should never reach 0 */
+	WARN_ON_ONCE(!beacon->csa_current_counter);
+
+	return beacon->csa_current_counter;
+}
+
 u8 ieee80211_csa_update_counter(struct ieee80211_vif *vif)
 {
 	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
@@ -3228,11 +3256,7 @@ u8 ieee80211_csa_update_counter(struct ieee80211_vif *vif)
 	if (!beacon)
 		goto unlock;
 
-	beacon->csa_current_counter--;
-
-	/* the counter should never reach 0 */
-	WARN_ON_ONCE(!beacon->csa_current_counter);
-	count = beacon->csa_current_counter;
+	count = __ieee80211_csa_update_counter(beacon);
 
 unlock:
 	rcu_read_unlock();
@@ -3332,7 +3356,7 @@ __ieee80211_beacon_get(struct ieee80211_hw *hw,
 		if (beacon) {
 			if (beacon->csa_counter_offsets[0]) {
 				if (!is_template)
-					ieee80211_csa_update_counter(vif);
+					__ieee80211_csa_update_counter(beacon);
 
 				ieee80211_set_csa(sdata, beacon);
 			}
@@ -3378,7 +3402,7 @@ __ieee80211_beacon_get(struct ieee80211_hw *hw,
 
 		if (beacon->csa_counter_offsets[0]) {
 			if (!is_template)
-				ieee80211_csa_update_counter(vif);
+				__ieee80211_csa_update_counter(beacon);
 
 			ieee80211_set_csa(sdata, beacon);
 		}
@@ -3408,7 +3432,7 @@ __ieee80211_beacon_get(struct ieee80211_hw *hw,
 				 * for now we leave it consistent with overall
 				 * mac80211's behavior.
 				 */
-				ieee80211_csa_update_counter(vif);
+				__ieee80211_csa_update_counter(beacon);
 
 			ieee80211_set_csa(sdata, beacon);
 		}

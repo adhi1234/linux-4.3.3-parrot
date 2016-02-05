@@ -2321,6 +2321,7 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 			rdev->wiphy.frag_threshold = old_frag_threshold;
 			rdev->wiphy.rts_threshold = old_rts_threshold;
 			rdev->wiphy.coverage_class = old_coverage_class;
+			return result;
 		}
 	}
 	return 0;
@@ -3408,12 +3409,6 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 					   wdev->iftype))
 		return -EINVAL;
 
-	if (info->attrs[NL80211_ATTR_ACL_POLICY]) {
-		params.acl = parse_acl_data(&rdev->wiphy, info);
-		if (IS_ERR(params.acl))
-			return PTR_ERR(params.acl);
-	}
-
 	if (info->attrs[NL80211_ATTR_SMPS_MODE]) {
 		params.smps_mode =
 			nla_get_u8(info->attrs[NL80211_ATTR_SMPS_MODE]);
@@ -3435,6 +3430,12 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 		}
 	} else {
 		params.smps_mode = NL80211_SMPS_OFF;
+	}
+
+	if (info->attrs[NL80211_ATTR_ACL_POLICY]) {
+		params.acl = parse_acl_data(&rdev->wiphy, info);
+		if (IS_ERR(params.acl))
+			return PTR_ERR(params.acl);
 	}
 
 	wdev_lock(wdev);
@@ -7390,7 +7391,8 @@ static int nl80211_set_mcast_rate(struct sk_buff *skb, struct genl_info *info)
 	int err;
 
 	if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_ADHOC &&
-	    dev->ieee80211_ptr->iftype != NL80211_IFTYPE_MESH_POINT)
+	    dev->ieee80211_ptr->iftype != NL80211_IFTYPE_MESH_POINT &&
+	    dev->ieee80211_ptr->iftype != NL80211_IFTYPE_OCB)
 		return -EOPNOTSUPP;
 
 	if (!rdev->ops->set_mcast_rate)

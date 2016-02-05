@@ -73,9 +73,7 @@
 
 #include "blk.h"
 #include "blk-mq.h"
-#ifndef __GENKSYMS__
 #include "blk-mq-tag.h"
-#endif
 
 /* FLUSH/FUA sequences */
 enum {

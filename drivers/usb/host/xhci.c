@@ -175,6 +175,16 @@ int xhci_reset(struct xhci_hcd *xhci)
 	command |= CMD_RESET;
 	writel(command, &xhci->op_regs->command);
 
+	/* Existing Intel xHCI controllers require a delay of 1 mS,
+	 * after setting the CMD_RESET bit, and before accessing any
+	 * HC registers. This allows the HC to complete the
+	 * reset operation and be ready for HC register access.
+	 * Without this delay, the subsequent HC register access,
+	 * may result in a system hang very rarely.
+	 */
+	if (xhci->quirks & XHCI_INTEL_HOST)
+		udelay(1000);
+
 	ret = xhci_handshake(&xhci->op_regs->command,
 			CMD_RESET, 0, 10 * 1000 * 1000);
 	if (ret)
@@ -3117,7 +3127,7 @@ static u32 xhci_calculate_no_streams_bitmask(struct xhci_hcd *xhci,
 }
 
 /*
- * The USB device drivers use this function (though the HCD interface in USB
+ * The USB device drivers use this function (through the HCD interface in USB
  * core) to prepare a set of bulk endpoints to use streams.  Streams are used to
  * coordinate mass storage command queueing across multiple endpoints (basically
  * a stream ID == a task ID).
@@ -4681,7 +4691,6 @@ int xhci_disable_usb3_lpm_timeout(struct usb_hcd *hcd,
 {
 	struct xhci_hcd	*xhci;
 	u16 mel;
-	int ret;
 
 	xhci = hcd_to_xhci(hcd);
 	if (!xhci || !(xhci->quirks & XHCI_LPM_SUPPORT) ||
@@ -4689,10 +4698,7 @@ int xhci_disable_usb3_lpm_timeout(struct usb_hcd *hcd,
 		return 0;
 
 	mel = calculate_max_exit_latency(udev, state, USB3_LPM_DISABLED);
-	ret = xhci_change_max_exit_latency(xhci, udev, mel);
-	if (ret)
-		return ret;
-	return 0;
+	return xhci_change_max_exit_latency(xhci, udev, mel);
 }
 #else /* CONFIG_PM */
 
